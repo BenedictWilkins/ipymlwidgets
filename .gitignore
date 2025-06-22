@@ -1,4 +1,5 @@
 
+*.dep
 # Big files...
 # Model weights
 *.pt
