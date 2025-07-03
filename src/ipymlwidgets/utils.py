@@ -3,6 +3,32 @@ import torch
 import numpy
 import PIL as pillow
 
+import distinctipy
+
+
+def get_colors(
+    n_colors: int, pastel_factor: float = 0.7, alpha: float = 1.0
+) -> torch.Tensor:
+    """
+    Generate n distinct colors suitable for class visualization.
+
+    Args:
+        n_colors (int): Number of distinct colors to generate.
+        pastel_factor (float): How pastel the colors should be (0-1). Defaults to 0.7.
+        alpha (float): Alpha value for the colors. Defaults to 1.0.
+
+    Returns:
+        torch.Tensor: Tensor of shape (n_colors, 4) with RGBA values.
+    """
+    colors = distinctipy.get_colors(n_colors, pastel_factor=pastel_factor)
+    return (
+        torch.tensor(
+            [(r, g, b, alpha) for r, g, b in colors],
+            dtype=torch.float32,
+        )
+        * 255.0
+    ).type(torch.uint8)
+
 
 def color_to_tuple(color: Any) -> tuple[int, ...]:
     """Convert color to a int tuple with range [0-255]."""

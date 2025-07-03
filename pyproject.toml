@@ -15,6 +15,7 @@ dependencies = [
     "ipycanvas",
     "ipykernel",
     "ipyevents",
+    "distinctipy", # color palettes
 ]
 
 [project.optional-dependencies]
