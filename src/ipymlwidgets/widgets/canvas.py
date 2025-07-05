@@ -3,6 +3,7 @@ import traitlets
 import numpy as np
 from typing import Optional, Any
 from contextlib import contextmanager
+import pathlib
 
 
 class Canvas(anywidget.AnyWidget):
@@ -58,294 +59,41 @@ class Canvas(anywidget.AnyWidget):
     }
     """
 
-    _esm = """
-    function render({ model, el }) {
-        // Apply initial CSS sizing
-        function updateStyles() {
-            wrapper.style.width = model.get("css_width");
-            wrapper.style.height = model.get("css_height");
-        }
-        
-        // Create inner wrapper for canvas positioning
-        const wrapper = document.createElement("div");
-        wrapper.classList.add("multicanvas-wrapper");
-        
-        // Array to hold all canvas elements and contexts
-        const canvases = [];
-        const contexts = [];
-        
-        // Get number of layers
-        const numLayers = model.get("layers") || 1;
-        
-        // Create canvas elements for each layer
-        for (let i = 0; i < numLayers; i++) {
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d");
-            
-            // Add CSS class to canvas
-            canvas.classList.add("multicanvas-canvas");
-            // No need for z-index or absolute positioning
-            
-            // Set up crisp scaling
-            ctx.imageSmoothingEnabled = false;
-            
-            // Add to arrays
-            canvases.push(canvas);
-            contexts.push(ctx);
-            
-            // Add to wrapper
-            wrapper.appendChild(canvas);
-        }
-        
-        el.appendChild(wrapper);
-        
-        // ResizeObserver to track actual rendered size
-        let resizeObserver;
-        
-        function updateClientSize() {
-            const rect = wrapper.getBoundingClientRect();
-            const clientWidth = Math.round(rect.width);
-            const clientHeight = Math.round(rect.height);
-            
-            // Only update if size actually changed
-            const currentSize = model.get("client_size");
-            if (currentSize[0] !== clientWidth || currentSize[1] !== clientHeight) {
-                model.set("client_size", [clientWidth, clientHeight]);
-                model.save_changes();
-            }
-        }
-        
-        function updateCanvas() {
-            const width = model.get("width");
-            const height = model.get("height");
-            
-            // Update all canvases with the new dimensions
-            for (let i = 0; i < canvases.length; i++) {
-                const canvas = canvases[i];
-                canvas.width = width;
-                canvas.height = height;
-            }
-        }
-        
-        function drawPatch(patchData, layerIndex) {
-            if (patchData && patchData.data && layerIndex < contexts.length) {
-                const { x, y, width, height, data } = patchData;
-                const ctx = contexts[layerIndex];
-                
-                // Create ImageData for the patch
-                const patchImageData = ctx.createImageData(width, height);
-                
-                // Handle the ArrayBuffer properly
-                let uint8Array;
-                if (data instanceof ArrayBuffer) {
-                    uint8Array = new Uint8Array(data);
-                } else if (data.buffer) {
-                    uint8Array = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-                } else {
-                    uint8Array = new Uint8Array(data);
-                }
-                
-                if (uint8Array.length > 0) {
-                    patchImageData.data.set(uint8Array);
-                    ctx.putImageData(patchImageData, x, y);
-                }
-            }
-        }
-        
-        // Draw a rectangle (box) on the specified layer.
-        // boxData: {
-        //   xyxy: [x0, y0, x1, y1],
-        //   color: CSS color string or [r,g,b,a],
-        //   thickness: int (optional, default 1)
-        // }
-        function drawBox(boxData, layerIndex) {
-            if (!boxData || layerIndex >= contexts.length) return;
-            const ctx = contexts[layerIndex];
-            const { xyxy, color, thickness } = boxData;
-            if (!xyxy || xyxy.length !== 4) return;
-            const [x0, y0, x1, y1] = xyxy;
-            ctx.save();
-            ctx.strokeStyle = Array.isArray(color)
-                ? `rgba(${color[0]},${color[1]},${color[2]},${color.length > 3 ? color[3] / 255 : 1})`
-                : (color || 'red');
-            ctx.lineWidth = thickness || 1;
-            ctx.beginPath();
-            ctx.rect(x0, y0, x1 - x0, y1 - y0);
-            ctx.stroke();
-            ctx.restore();
-        }
-        
-        function drawPatches() {
-            const bufferedPatches = model.get("_buffer");
-            for (const patch of bufferedPatches) {
-                const layerIndex = patch.layer || 0;
-                if (patch.type === 'box') {
-                    drawBox(patch, layerIndex);
-                } else {
-                    drawPatch(patch, layerIndex);
-                }
-            }
-            model.set("_buffer", []);
-            model.save_changes();
-        }
-        
-        // Set up ResizeObserver if available
-        if (typeof ResizeObserver !== 'undefined') {
-            resizeObserver = new ResizeObserver(entries => {
-                for (let entry of entries) {
-                    if (entry.target === wrapper) {
-                        updateClientSize();
-                    }
-                }
-            });
-            resizeObserver.observe(wrapper);
-        }
-        
-        // Listen for changes - use individual listeners for better debugging
-        model.on("change:width", () => {
-            updateCanvas();
-        });
-        model.on("change:height", () => {
-            updateCanvas();
-        });
-        model.on("change:_buffer", () => {
-            drawPatches();
-        });
-        model.on("change:css_width change:css_height change:css_max_width change:css_max_height", () => {
-            updateStyles();
-        });
-      
-        // Mouse event handling
-        let isMouseDown = false;
-        let dragStartPos = null;
-        let dragThreshold = 3; // pixels
-        
-        function getMouseData(event) {
-            const rect = wrapper.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            
-            // Convert to canvas coordinates using the first canvas as reference
-            const canvasX = Math.floor((x / rect.width) * canvases[0].width);
-            const canvasY = Math.floor((y / rect.height) * canvases[0].height);
-            
-            return {
-                x: canvasX,
-                y: canvasY,
-                x_client: x,
-                y_client: y,
-                w_client: rect.width,
-                h_client: rect.height,
-                w: canvases[0].width,
-                h: canvases[0].height
-            };
-        }
-        
-        function handleMouseDown(event) {
-            isMouseDown = true;
-            const mouseData = getMouseData(event);
-            dragStartPos = { x: mouseData.x, y: mouseData.y, clientX: event.clientX, clientY: event.clientY };
-            
-            model.set("mouse_down", mouseData);
-            model.save_changes();
-        }
-        
-        function handleMouseUp(event) {
-            const mouseData = getMouseData(event);
-            
-            if (isMouseDown && dragStartPos) {
-                // Check if it was a click (no significant movement)
-                const dx = event.clientX - dragStartPos.clientX;
-                const dy = event.clientY - dragStartPos.clientY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance < dragThreshold) {
-                    // It's a click
-                    model.set("mouse_click", mouseData);
-                    model.save_changes();
-                } else {
-                    // It was a drag that ended
-                    const dragData = { 
-                        ...mouseData, 
-                        x_start: dragStartPos.x,
-                        y_start: dragStartPos.y
-                    };
-                    model.set("mouse_drag", dragData);
-                    model.save_changes();
-                }
-                
-                model.set("mouse_up", mouseData);
-                model.save_changes();
-            }
-            
-            isMouseDown = false;
-            dragStartPos = null;
-        }
-        
-        function handleMouseMove(event) {
-            const mouseData = getMouseData(event);
-            model.set("mouse_move", mouseData);
-            model.save_changes();
-            
-            if (isMouseDown && dragStartPos) {
-                const dx = event.clientX - dragStartPos.clientX;
-                const dy = event.clientY - dragStartPos.clientY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance >= dragThreshold) {
-                    // It's a drag
-                    const dragData = { 
-                        ...mouseData, 
-                        x_start: dragStartPos.x,
-                        y_start: dragStartPos.y
-                    };
-                    model.set("mouse_drag", dragData);
-                    model.save_changes();
-                }
-            }
-        }
-        
-        function handleMouseEnter(event) {
-            const mouseData = getMouseData(event);
-            model.set("mouse_enter", mouseData);
-            model.save_changes();
-        }
-        
-        function handleMouseLeave(event) {
-            const mouseData = getMouseData(event);
-            model.set("mouse_leave", mouseData);
-            
-            // Reset mouse state when leaving canvas
-            isMouseDown = false;
-            dragStartPos = null;
-        }
-        
-        // Add mouse event listeners to wrapper
-        wrapper.addEventListener('mousedown', handleMouseDown);
-        wrapper.addEventListener('mouseup', handleMouseUp);
-        wrapper.addEventListener('mousemove', handleMouseMove);
-        wrapper.addEventListener('mouseenter', handleMouseEnter);
-        wrapper.addEventListener('mouseleave', handleMouseLeave);
+    # Javascript
+    _esm = pathlib.Path(__file__).parent / "canvas.js"
 
-        // Initial render - just set up the canvas dimensions
-        updateCanvas();
-        updateStyles();
-        
-        // Process any patches that were buffered
-        const bufferedPatches = model.get("_buffer");
+    @property
+    def stroke_width(self) -> int:
+        """Write-only property. Setting this enqueues a set command for ctx.lineWidth. Value is not stored in Python."""
+        raise AttributeError("stroke_width is write-only.")
 
-        if (bufferedPatches && bufferedPatches.length > 0) {
-            drawPatches();
-        }
+    @stroke_width.setter
+    def stroke_width(self, value: int) -> None:
+        buffer = list(self._buffer)
+        buffer.append({"type": "set", "name": "lineWidth", "value": value})
+        self._buffer = buffer
 
-        return () => {
-            if (resizeObserver) {
-                resizeObserver.disconnect();
-            }
-        };
-    }
-    export default { render };
-    """
+    @property
+    def stroke_color(self) -> str:
+        """Write-only property. Setting this enqueues a set command for ctx.strokeStyle. Value is not stored in Python."""
+        raise AttributeError("stroke_color is write-only.")
+
+    @stroke_color.setter
+    def stroke_color(self, value: str) -> None:
+        buffer = list(self._buffer)
+        buffer.append({"type": "set", "name": "strokeStyle", "value": value})
+        self._buffer = buffer
+
+    @property
+    def fill_color(self) -> str:
+        """Write-only property. Setting this enqueues a set command for ctx.fillStyle. Value is not stored in Python."""
+        raise AttributeError("fill_color is write-only.")
+
+    @fill_color.setter
+    def fill_color(self, value: str) -> None:
+        buffer = list(self._buffer)
+        buffer.append({"type": "set", "name": "fillStyle", "value": value})
+        self._buffer = buffer
 
     def __init__(
         self,
@@ -368,11 +116,11 @@ class Canvas(anywidget.AnyWidget):
             layers=layers,
             **kwargs,
         )
-        self._hold = False
+        self._hold = 0
 
     def repaint(self) -> None:
         """Manually triggered a repaint of the canvas."""
-        if self._hold:
+        if self._hold > 0:
             pass  # wait until the hold is released the repaint will be triggered then
         else:
             buffer = list(self._buffer)
@@ -421,6 +169,7 @@ class Canvas(anywidget.AnyWidget):
         """
         data = asbytes(data, width, height)
         patch_dict = {
+            "type": "patch",
             "x": x,
             "y": y,
             "width": width,
@@ -429,7 +178,7 @@ class Canvas(anywidget.AnyWidget):
             "layer": layer,
         }
 
-        if self._hold:
+        if self._hold > 0:
             self._buffer_hold.append(patch_dict)
         else:
             buffer = list(self._buffer)
@@ -437,14 +186,15 @@ class Canvas(anywidget.AnyWidget):
             self._buffer = buffer
 
     @contextmanager
-    def hold(self):
-        self._hold = True
+    def hold_repaint(self):
+        self._hold += 1
         try:
             yield self
         finally:
-            self._hold = False
-            self._buffer = self._buffer + self._buffer_hold
-            self._buffer_hold = []
+            self._hold -= 1
+            if self._hold == 0:
+                self._buffer = self._buffer + self._buffer_hold
+                self._buffer_hold = []
 
     def __repr__(self):
         return f"MultiCanvas(width={self.width}, height={self.height}, layers={self.layers})"
@@ -454,33 +204,69 @@ class Canvas(anywidget.AnyWidget):
 
     def draw_rect(
         self,
-        xyxy: tuple[int, int, int, int],
-        color: str | list[int],
-        thickness: int = 1,
+        xyxy: tuple[int, int, int, int] | np.ndarray,
         layer: int = 0,
     ) -> None:
-        """Draw a rectangle (box) on the canvas at the specified layer.
+        """Draw one or more rectangles on the specified layer using current style traits.
 
         Args:
-            xyxy (tuple[int, int, int, int]): (x0, y0, x1, y1) coordinates of the rectangle.
-            color (str | list[int]): CSS color string or [r, g, b, a] list (0-255).
-            thickness (int): Border thickness in pixels. Defaults to 1.
+            xyxy (tuple[int, int, int, int] | numpy.ndarray):
+                - Single rectangle: (x0, y0, x1, y1) coordinates.
+                - Batched: numpy array of shape [N, 4] (int), each row is (x0, y0, x1, y1).
             layer (int): Layer index to draw on. Defaults to 0.
+
+        Note:
+            The rectangle(s) appearance is controlled by by following attributes:
+                - stroke_width (int): Outline thickness in pixels.
+                - stroke_color (str): Outline color (CSS color string).
+                - fill_color (str): Fill color (CSS color string, empty for no fill).
+            Set these attributes directly on the Canvas instance before calling `draw_rect`.
+
+        Raises:
+            ValueError: If any coordinate is not an integer type.
+        """
+        if isinstance(xyxy, tuple):
+            arr = np.array([xyxy], dtype=np.uint32)
+        else:
+            arr = xyxy.astype(np.int32)  # always int32
+            if arr.ndim != 2 or arr.shape[1] != 4:
+                raise ValueError("Rectangle array must have shape [N, 4].")
+        if not np.issubdtype(arr.dtype, np.integer):
+            raise ValueError("All rectangle coordinates must be integer type.")
+        rect_patch = {
+            "type": "rect",
+            "rects": arr.tobytes(),
+            "count": arr.shape[0],
+            "layer": layer,
+        }
+        if self._hold > 0:
+            self._buffer_hold.append(rect_patch)
+        else:
+            buffer = list(self._buffer)
+            buffer.append(rect_patch)
+            self._buffer = buffer
+
+    def clear(self, layer: int = 0) -> None:
+        """Clear the canvas at the specified layer.
+
+        Args:
+            layer (int): Layer index to clear. Defaults to 0.
         Returns:
             None: This method does not return a value.
         """
-        box_patch = {
-            "type": "box",
-            "xyxy": xyxy,
-            "color": color,
-            "thickness": thickness,
+        if layer >= self.layers:
+            raise IndexError(
+                f"{layer} is out of range Canvas has {self.layers} layers."
+            )
+        clear_patch = {
+            "type": "clear",
             "layer": layer,
         }
-        if self._hold:
-            self._buffer_hold.append(box_patch)
+        if self._hold > 0:
+            self._buffer_hold.append(clear_patch)
         else:
             buffer = list(self._buffer)
-            buffer.append(box_patch)
+            buffer.append(clear_patch)
             self._buffer = buffer
 
 

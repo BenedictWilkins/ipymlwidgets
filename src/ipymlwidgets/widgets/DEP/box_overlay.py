@@ -322,7 +322,7 @@ class BoxOverlay(Image):
     ):
         color = resolve_colors(boxes[:, 4].long(), cmap)
         canvas = self.get_canvas(layer)
-        with self.hold(canvas):  # batch the draw
+        with self.hold_repaint(canvas):  # batch the draw
             canvas.save()
             canvas.clear()
             canvas.line_width = self._node_size

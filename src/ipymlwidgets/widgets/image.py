@@ -40,7 +40,7 @@ class Image(Canvas):
         self.observe(self._repaint_image, names=["image"])
         self.image = image
 
-    def _convert_image(self, tensor: Optional[SupportedTensor]) -> Optional[bytes]:
+    def _to_numpy_image(self, tensor: Optional[SupportedTensor]) -> Optional[bytes]:
         """Convert image array to bytes and update synced fields.
 
         Args:
@@ -59,14 +59,21 @@ class Image(Canvas):
         assert array.dtype == np.uint8
         return array
 
+    def _to_numpy(self, tensor: SupportedTensor) -> np.ndarray:
+        """Convert a supported tensor to a numpy array."""
+        # assume that we are being consistent with tensor type usage...
+        image_trait: TTensor = self.traits()["image"]
+        dependency: OptionalDependency = image_trait.get_dependency(self, tensor)
+        return dependency.to_numpy(tensor)
+
     def _repaint_image(self, change: Optional[dict[str, Any]] = None) -> None:
         """Internal call back to repaint the image."""
         if change is None:
-            self.set_image(self._convert_image(self.image))
+            self.set_image(self._to_numpy_image(self.image))
         else:
             image = change["new"]
             with self.hold_trait_notifications():
-                image = self._convert_image(image)  # HWC
+                image = self._to_numpy_image(image)  # HWC
                 self.width = image.shape[1]
                 self.height = image.shape[0]
                 self.set_image(image)
