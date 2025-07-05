@@ -33,6 +33,15 @@ class Canvas(anywidget.AnyWidget):
     # used to buffer patches when hold is on
     _buffer_hold = traitlets.List([]).tag(sync=False)
 
+    # Mouse events
+    mouse_move = traitlets.Dict().tag(sync=True)
+    mouse_down = traitlets.Dict().tag(sync=True)
+    mouse_up = traitlets.Dict().tag(sync=True)
+    mouse_click = traitlets.Dict().tag(sync=True)
+    mouse_drag = traitlets.Dict().tag(sync=True)
+    mouse_leave = traitlets.Dict().tag(sync=True)
+    mouse_enter = traitlets.Dict().tag(sync=True)
+
     _esm = """
     function render({ model, el }) {
         console.log("JS: Render function called");
@@ -173,6 +182,126 @@ class Canvas(anywidget.AnyWidget):
             updateStyles();
         });
 
+        // Mouse event handling
+        let isMouseDown = false;
+        let dragStartPos = null;
+        let dragThreshold = 3; // pixels
+        
+        function getMouseData(event) {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            // Convert to canvas coordinates
+            const canvasX = Math.floor((x / rect.width) * canvas.width);
+            const canvasY = Math.floor((y / rect.height) * canvas.height);
+            
+            return {
+                x: canvasX,
+                y: canvasY,
+                x_client: x,
+                y_client: y,
+                w_client: rect.width,
+                h_client: rect.height,
+                w: canvas.width,
+                h: canvas.height
+            };
+        }
+        
+        function handleMouseDown(event) {
+            isMouseDown = true;
+            const mouseData = getMouseData(event);
+            dragStartPos = { x: mouseData.x, y: mouseData.y, clientX: event.clientX, clientY: event.clientY };
+            
+            model.set("mouse_down", mouseData);
+            model.save_changes();
+            console.log("JS: Mouse down at", mouseData);
+        }
+        
+        function handleMouseUp(event) {
+            const mouseData = getMouseData(event);
+            
+            if (isMouseDown && dragStartPos) {
+                // Check if it was a click (no significant movement)
+                const dx = event.clientX - dragStartPos.clientX;
+                const dy = event.clientY - dragStartPos.clientY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < dragThreshold) {
+                    // It's a click
+                    model.set("mouse_click", mouseData);
+                    model.save_changes();
+                    console.log("JS: Mouse click at", mouseData);
+                } else {
+                    // It was a drag that ended
+                    const dragData = { 
+                        ...mouseData, 
+                        x_start: dragStartPos.x,
+                        y_start: dragStartPos.y
+                    };
+                    model.set("mouse_drag", dragData);
+                    model.save_changes();
+                    console.log("JS: Mouse drag end at", dragData);
+                }
+                
+                model.set("mouse_up", mouseData);
+                model.save_changes();
+                console.log("JS: Mouse up at", mouseData);
+            }
+            
+            isMouseDown = false;
+            dragStartPos = null;
+        }
+        
+        function handleMouseMove(event) {
+            const mouseData = getMouseData(event);
+            model.set("mouse_move", mouseData);
+            model.save_changes();
+            
+            if (isMouseDown && dragStartPos) {
+                const dx = event.clientX - dragStartPos.clientX;
+                const dy = event.clientY - dragStartPos.clientY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance >= dragThreshold) {
+                    // It's a drag
+                    const dragData = { 
+                        ...mouseData, 
+                        x_start: dragStartPos.x,
+                        y_start: dragStartPos.y
+                    };
+                    model.set("mouse_drag", dragData);
+                    model.save_changes();
+                    console.log("JS: Mouse drag at", dragData);
+                }
+            }
+        }
+        
+        function handleMouseEnter(event) {
+            const mouseData = getMouseData(event);
+            model.set("mouse_enter", mouseData);
+            model.save_changes();
+            console.log("JS: Mouse enter at", mouseData);
+        }
+        
+        function handleMouseLeave(event) {
+            const mouseData = getMouseData(event);
+            model.set("mouse_leave", mouseData);
+            model.save_changes();
+            console.log("JS: Mouse leave at", mouseData);
+            
+            // Reset mouse state when leaving canvas
+            isMouseDown = false;
+            dragStartPos = null;
+        }
+        
+        // Add mouse event listeners
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mouseup', handleMouseUp);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mouseenter', handleMouseEnter);
+        canvas.addEventListener('mouseleave', handleMouseLeave);
+
         console.log("JS: Event listeners set up successfully");
         
         // Initial render - just set up the canvas dimensions
@@ -264,10 +393,6 @@ class Canvas(anywidget.AnyWidget):
         if not self._hold:
             self._buffer_repaint = True
 
-    def clear(self) -> None:
-        """Clear the canvas by setting an empty patch."""
-        self.patch_data = {}
-
     @contextmanager
     def hold(self):
         self._hold = True
@@ -277,6 +402,12 @@ class Canvas(anywidget.AnyWidget):
             self._hold = False
             self._buffer = self._buffer + self._buffer_hold
             self._buffer_hold = []
+
+    def __repr__(self):
+        return f"Canvas(width={self.width}, height={self.height})"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 def asbytes(image_data: Any, width: int, height: int) -> bytes:
@@ -355,4 +486,6 @@ def demo_patch_updates(canvas: Canvas) -> None:
 
     # Create a green rectangle patch (32x8)
     green_patch = np.full((8, 32, 4), [0, 255, 0, 255], dtype=np.uint8)
+    canvas.set_patch(16, 50, 32, 8, green_patch)
+
     canvas.set_patch(16, 50, 32, 8, green_patch)
