@@ -1,8 +1,7 @@
 import anywidget
 import traitlets
 import numpy as np
-from typing import Optional, Any, List, Dict
-import time
+from typing import Optional, Any
 from contextlib import contextmanager
 
 
@@ -350,13 +349,29 @@ class Canvas(anywidget.AnyWidget):
         )
         self._hold = False
 
-    def set_image(self, image_data: bytes | np.ndarray) -> None:
+    def repaint(self) -> None:
+        """Manually triggered a repaint of the canvas."""
+        if self._hold:
+            pass  # wait until the hold is released the repaint will be triggered then
+        else:
+            buffer = list(self._buffer)
+            self._buffer = []  # clear and reset the buffer to trigger the change
+            self._buffer = buffer
+
+    def set_image(self, image_data: Optional[bytes | np.ndarray]) -> None:
         """Set the entire image data for the canvas using a full-size patch.
 
         Args:
             image_data (bytes | np.ndarray): Raw RGBA image data as bytes or numpy array.
         """
-        self.set_patch(0, 0, self.width, self.height, image_data)
+        if image_data is None:
+            with self.hold_trait_notifications():
+                self._buffer = []
+                self.width = 0
+                self.height = 0
+            return
+        else:
+            self.set_patch(0, 0, self.width, self.height, image_data)
 
     def set_patch(
         self,

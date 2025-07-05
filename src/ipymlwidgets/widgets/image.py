@@ -40,51 +40,43 @@ class Image(Canvas):
             height=height,
             **kwargs,
         )
+        self.observe(self._repaint_image, names=["image"])
+        self.image = image
 
-        self.observe(self._refresh_internal, names=["image"])
-        if image is not None:
-            self.image = image
-
-    def _on_image_change(self, change: dict) -> None:
-        """Handle changes to the backing image field.
-
-        Args:
-            change (dict): The change dictionary from traitlets.
-        """
-        new_image = change["new"]
-        if new_image is not None:
-            self._convert_image_to_bytes(new_image)
-
-    def _convert_image_to_bytes(self, tensor: SupportedTensor) -> bytes:
+    def _convert_image(self, tensor: Optional[SupportedTensor]) -> Optional[bytes]:
         """Convert image array to bytes and update synced fields.
 
         Args:
             tensor (SupportedTensor): Image tensor to convert.
 
         Returns:
-            bytes: Converted image data as bytes.
+            Optional[bytes]: Converted image data as bytes or None if tensor is None.
         """
+        if tensor is None:
+            return None
         image_trait: TTensor = self.traits()["image"]
         dependency: OptionalDependency = image_trait.get_dependency(self, tensor)
         array = dependency.to_numpy_image(tensor)
         assert array.ndim == 3
         assert array.shape[2] == 4  # HWC format RGBA
         assert array.dtype == np.uint8
-        self.width = array.shape[1]
-        self.height = array.shape[0]
-        return array.tobytes()
+        return array
 
-    def _refresh_internal(self, _) -> None:
-        """Refresh the image display."""
-        if self._hold:  # wait until hold is released
-            return
-        if self.image is None:
-            pass  # TODO handle this..
-        self._image_data = self._convert_image_to_bytes(self.image)
+    def _repaint_image(self, change: Optional[dict[str, Any]] = None) -> None:
+        """Internal call back to repaint the image."""
+        if change is None:
+            self.set_image(self._convert_image(self.image))
+        else:
+            image = change["new"]
+            with self.hold_trait_notifications():
+                image = self._convert_image(image)  # HWC
+                self.width = image.shape[1]
+                self.height = image.shape[0]
+                self.set_image(image)
 
-    def refresh(self) -> None:
-        """Refresh the image display."""
-        self._refresh_internal(None)  # not used?
+    def repaint(self) -> None:
+        """Manually repaint the image, e.g. after direct pixel operations."""
+        self._repaint_image(None)
 
     @property
     def shape(self) -> tuple[int, int, int]:
@@ -103,7 +95,7 @@ class Image(Canvas):
             value (SupportedTensor): The value to set the pixel to.
         """
         self.image[index] = value
-        self._refresh_internal(None)
+        self._repaint_image(None)
 
     def __getitem__(self, key):
         """Get pixels using array indexing syntax.
@@ -116,29 +108,4 @@ class Image(Canvas):
         """
         if self.image is None:
             raise ValueError("No image data available")
-
         return self.image[key]
-
-    @contextmanager
-    def hold(self):
-        """Context manager to suppress immediate repaint.
-
-        Multiple pixel operations can be performed without triggering immediate updates to the display. The display is updated once when exiting the context.
-
-        Example:
-        ```python
-            with image.hold():
-                image[10:20, 10:20] = [255, 0, 0]  # Red square
-                image[30:40, 30:40] = [0, 255, 0]  # Green square
-                image[50:60, 50:60] = [0, 0, 255]  # Blue square
-            # Display updates here with all changes at once
-        ```
-        """
-        self._hold = True
-        try:
-            yield self
-        finally:
-            self._hold = False
-            # Trigger a single update with the current image state
-            if self.image is not None:
-                self.refresh()
