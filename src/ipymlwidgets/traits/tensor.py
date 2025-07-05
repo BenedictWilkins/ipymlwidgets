@@ -138,6 +138,43 @@ class TorchDependency(OptionalDependency):
             return False
         return isinstance(obj, self.module.Tensor)
 
+    def to_numpy_image(self, tensor: PTTensor) -> np.ndarray:
+        """Convert a torch.Tensor to numpy array suitable for image display.
+
+        Converts from CHW [0-1] format to HWC [0-255] uint8 format.
+
+        Args:
+            tensor (PTTensor): PyTorch tensor with shape (C, H, W) and values in [0, 1]. Supports 1 channel (grayscale), 3 channels (RGB), or 4 channels (RGBA).
+
+        Returns:
+            np.ndarray[H,W,4]: Numpy array with shape (H, W, 4) and dtype uint8 in range [0, 255].
+        """
+        if tensor.ndim == 3:
+            tensor = tensor.permute(1, 2, 0)
+        elif tensor.ndim == 2:
+            tensor = tensor.unsqueeze(0)
+        else:
+            raise ValueError(
+                f"Argument: `tensor` expected 2D or 3D tensor but got {tensor.ndim}D"
+            )
+        if tensor.shape[0] == 1:
+            tensor = tensor.expand(4, -1, -1)  # RGBA
+        elif tensor.shape[0] == 3:
+            tensor = torch.cat([tensor, torch.ones_like(tensor[:1])], dim=0)
+        elif tensor.shape[0] == 4:
+            pass  # already RGBA
+        else:
+            raise ValueError(
+                f"Argument: `tensor` expected 1, 3, or 4 channels but got {tensor.shape[0]}"
+            )
+
+        if tensor.dtype.is_floating_point:
+            tensor = torch.clamp(tensor, 0.0, 1.0)
+            tensor = (tensor * 255).to(torch.uint8)
+        else:
+            tensor = tensor.to(torch.uint8)
+        return self.to_numpy(tensor)
+
 
 class TensorFlowDependency(OptionalDependency):
     """TensorFlow optional dependency with conversion utilities."""
@@ -192,6 +229,9 @@ class TensorFlowDependency(OptionalDependency):
             return False
         return isinstance(obj, self.module.Tensor)
 
+    def to_numpy_image(self, tensor: NPTensor) -> np.ndarray:
+        raise NotImplementedError("COMING SOON")  # TODO
+
 
 # This is not optional, but makes things cleaner in the conversion logic
 class NumpyDependency(OptionalDependency):
@@ -208,6 +248,27 @@ class NumpyDependency(OptionalDependency):
 
     def is_tensor(self, obj: Any) -> bool:  # noqa
         return isinstance(obj, np.ndarray)
+
+    def to_numpy_image(self, array: np.ndarray) -> np.ndarray:
+        assert array.ndim == 3
+        if array.ndim == 2:
+            array = array[..., np.newaxis]
+        if array.shape[2] == 1:
+            array = array.repeat(3, axis=2)
+        elif array.shape[2] == 3:
+            array = np.concatenate([array, np.full_like(array[..., :1], 255)], axis=2)
+        elif array.shape[2] == 4:
+            pass  # already HWC RGBA
+        else:
+            raise ValueError(
+                f"Argument: `array` expected 1, 3, or 4 channels but got {array.shape[2]}"
+            )
+        if np.issubdtype(array.dtype, np.floating):
+            array = np.clip(array, 0.0, 1.0)
+            array = (array * 255).astype(np.uint8)
+        else:
+            array = array.astype(np.uint8)
+        return array
 
 
 # Create dependency instances

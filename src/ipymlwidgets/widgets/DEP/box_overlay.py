@@ -1,6 +1,8 @@
 from traitlets import Instance, Undefined, validate, observe
 from typing import Optional
+
 import torch
+import ipyevents as E
 
 from ipymlwidgets.utils import color_to_hex, get_colors, resolve_colors
 from ipymlwidgets.widgets.image import Image
@@ -11,7 +13,7 @@ DEFAULT_STROKE_COLOR = (255, 0, 0, 255)
 DEFAULT_STROKE_WIDTH = 2
 DEFAULT_SELECTED_CMAP = torch.tensor(DEFAULT_STROKE_COLOR).unsqueeze(0)
 
-SELECT_NODE_SIZE = 5  # 5 pixels in the client...?
+SELECT_NODE_SIZE = 8  # 5 pixels in the client
 
 LAYER_BOXES = 0
 LAYER_SELECTED = 1
@@ -78,14 +80,18 @@ class BoxOverlay(Image):
         self._overlay_size = overlay_size
         self.resize(self._overlay_size)
 
-        # add the overlay css to this widget (controlled by the parent widget)
-        # see e.g. ipymlwidgets.widgets.AnnotatedImage
-        self._canvas.add_class("overlay-image")
-
         # TODO cmap will break if more classes are added...
         boxes = BoxOverlay.validate_boxes(boxes, self.size)
         self.cmap = self.validate_cmap(cmap, boxes=boxes)
         self.boxes = boxes
+        # the size of the selectable node in image space
+        self._node_size = 0
+
+    @observe("client_size")
+    def _on_client_size_change(self, _):
+        # they should match in aspect ratio... no weird distortions please!
+        scale = max(self.size) / max(self.client_size)
+        self._node_size = max(1, scale * SELECT_NODE_SIZE)
 
     @observe("boxes")
     def _on_boxes_change(self, _):
@@ -134,7 +140,8 @@ class BoxOverlay(Image):
             return get_colors(max(n, 1), pastel_factor=0.5)
         return value
 
-    def select_box(self, x: float, y: float) -> BoxSelection:
+    def select_box(self, mouse_event: dict) -> BoxSelection:
+        x, y = mouse_event["x"], mouse_event["y"]
         x1, y1, x2, y2, *_ = self.boxes.unbind(dim=1)
         # check if the mouse is inside any of the boxes
         left_diff = x - x1  # [N,]
@@ -142,7 +149,7 @@ class BoxOverlay(Image):
         top_diff = y - y1  # [N,]
         bottom_diff = y2 - y  # [N,]
 
-        select_node_size = SELECT_NODE_SIZE * 2
+        select_node_size = SELECT_NODE_SIZE
         select_node_size2 = select_node_size / 2
         # is the mouse inside any of the boxes (including the expanded edge)
         select_inside = (
@@ -318,7 +325,7 @@ class BoxOverlay(Image):
         with self.hold(canvas):  # batch the draw
             canvas.save()
             canvas.clear()
-            canvas.line_width = SELECT_NODE_SIZE
+            canvas.line_width = self._node_size
             for i in range(boxes.shape[0]):
                 # draw in the center of the pixels
                 x1, y1, x2, y2 = (boxes[i, :4] + 0.5).tolist()

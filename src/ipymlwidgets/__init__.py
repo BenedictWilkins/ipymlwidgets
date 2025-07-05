@@ -6,9 +6,7 @@ __email__ = "benedict.wilkins@sony.com"
 
 # Import commonly used classes/functions
 from .widgets.image import Image
-from .widgets.image_annotated import ImageAnnotated
 
 __all__ = [
     "Image",
-    "ImageAnnotated",
 ]

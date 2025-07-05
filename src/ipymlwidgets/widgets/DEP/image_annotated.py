@@ -27,6 +27,24 @@ _OVERLAY_STYLE = """
     position: absolute;
     top: 0;
     left: 0;
+    width: 100%;
+    height: 100%;
+}
+</style>
+"""
+_OVERLAY_STYLE = """
+<style>
+.image-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+.image-base {
+    position: relative;
+    width: auto;
+    height: 100%;
 }
 </style>
 """
@@ -50,40 +68,51 @@ class ImageAnnotated(W.Box):
         keypoints: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
         cmap: Optional[torch.Tensor] = None,
-        display_size: tuple[int, int] = (320, 320),
     ):
         # empty image, will be set by trailet link
-        self._image_canvas = Image()
-        self._image_canvas.add_class("overlay-image")
+        self._image_widget = Image()
+        self._image_widget.add_class("image-base")
         self.image = image  # set the image here and in self._image_canvas
         # link the image trait (image <-> overlay)
-        link((self, "image"), (self._image_canvas, "image"))
+        link((self, "image"), (self._image_widget, "image"))
 
-        self._overlay_box = BoxOverlay(None, overlay_size=display_size)
-        self.boxes = BoxOverlay.validate_boxes(boxes, self._image_canvas.size)
+        # TODO make this much smaller if the image canvas size is large.
+        overlay_size = (
+            self._image_widget.size[0],
+            self._image_widget.size[1],
+        )
+        self._overlay_box = BoxOverlay(None, overlay_size=overlay_size)
+        self._overlay_box.add_class("image-overlay")
+
+        self.boxes = BoxOverlay.validate_boxes(boxes, self._image_widget.size)
         # link the selection trait (overlay -> image)
         dlink((self._overlay_box, "selection"), (self, "selection"))
         # link the boxes trait (image <-> overlay)
         link(
             (self, "boxes"),
             (self._overlay_box, "boxes"),
-            transform=(self._boxes_image_to_overlay, self._boxes_overlay_to_image),
+            # transform=(self._boxes_image_to_overlay, self._boxes_overlay_to_image),
         )
         self._overlay_keypoints = None
         self._overlay_mask = None
-        size = (f"{display_size[0]}px", f"{display_size[1]}px")
+        # size = (f"{display_size[0]}px", f"{display_size[1]}px")
         super().__init__(
             [
                 # this style stacks the overlays on top of each other
                 W.Box(
                     [
                         W.HTML(_OVERLAY_STYLE, layout=_STYLE_HTML_LAYOUT),
-                        self._image_canvas,
+                        self._image_widget,
                         self._overlay_box,
                         # self._overlay_keypoints,
                         # self._overlay_mask,
                     ],
-                    layout=W.Layout(width=size[0], height=size[1]),
+                    layout=W.Layout(
+                        position="relative",
+                        width="100%",
+                        height="auto",
+                        overflow="hidden",
+                    ),
                 ),
             ],
         )
@@ -93,24 +122,24 @@ class ImageAnnotated(W.Box):
 
     @property
     def size(self):
-        return self._image_canvas.size
+        return self._image_widget.size
 
-    def _boxes_overlay_to_image(self, boxes: Optional[torch.Tensor]):
-        """Transform boxes coming from the overlay to the image size"""
-        if boxes is None:
-            return None
-        boxes = boxes.clone()
-        xscale = self._image_canvas.size[0] / self._overlay_box.size[0]
-        yscale = self._image_canvas.size[1] / self._overlay_box.size[1]
-        boxes[:, :4] *= torch.tensor([xscale, yscale, xscale, yscale])
-        return boxes
+    # def _boxes_overlay_to_image(self, boxes: Optional[torch.Tensor]):
+    #     """Transform boxes coming from the overlay to the image size"""
+    #     if boxes is None:
+    #         return None
+    #     boxes = boxes.clone()
+    #     xscale = self._image_widget.size[0] / self._overlay_box.size[0]
+    #     yscale = self._image_widget.size[1] / self._overlay_box.size[1]
+    #     boxes[:, :4] *= torch.tensor([xscale, yscale, xscale, yscale])
+    #     return boxes
 
-    def _boxes_image_to_overlay(self, boxes: Optional[torch.Tensor]):
-        """Transform boxes coming from the image to the overlay size"""
-        if boxes is None:
-            return None
-        boxes = boxes.clone()
-        xscale = self._overlay_box.size[0] / self._image_canvas.size[0]
-        yscale = self._overlay_box.size[1] / self._image_canvas.size[1]
-        boxes[:, :4] *= torch.tensor([xscale, yscale, xscale, yscale])
-        return boxes
+    # def _boxes_image_to_overlay(self, boxes: Optional[torch.Tensor]):
+    #     """Transform boxes coming from the image to the overlay size"""
+    #     if boxes is None:
+    #         return None
+    #     boxes = boxes.clone()
+    #     xscale = self._overlay_box.size[0] / self._image_widget.size[0]
+    #     yscale = self._overlay_box.size[1] / self._image_widget.size[1]
+    #     boxes[:, :4] *= torch.tensor([xscale, yscale, xscale, yscale])
+    #     return boxes

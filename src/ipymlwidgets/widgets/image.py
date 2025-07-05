@@ -1,325 +1,216 @@
-"""Image widget that displays PyTorch tensors using ipycanvas."""
-
+import anywidget
+import traitlets
 import numpy as np
-from typing import Optional, Callable
-from traitlets import observe, Instance, Dict as TDict
-import ipycanvas
-import ipywidgets as W
-import ipyevents as E
-import torchvision.transforms.v2.functional as F
-from ipymlwidgets.traits import Tensor, SupportedTensor
+from typing import Optional, Any
+from contextlib import contextmanager
 
-_NEAREST_STYLE = """
-    <style>
-    .nearest_interpolation {
-        image-rendering: pixelated !important;
-        image-rendering: crisp-edges !important;
-    }
-    </style>
-"""
-DRAG_THRESHOLD = 3  # client space threshold for drag start
-
-_STYLE_HTML_LAYOUT = W.Layout(
-    width="0px", height="0px", margin="0px", padding="0px", border="none"
+from ipymlwidgets.traits.tensor import (
+    Tensor as TTensor,
+    OptionalDependency,
+    SupportedTensor,
 )
 
 
-class Image(W.Box):
-    """A widget that displays PyTorch tensors as images using ipycanvas."""
+class Image(anywidget.AnyWidget):
+    """A canvas widget that displays image data with CSS layout controls."""
 
-    # always convert the incoming tensor value to numpy
-    image = Tensor(allow_none=True).tag(sync=False)
-    # events
-    mouse_click = TDict(allow_none=False, default_value=dict()).tag(sync=False)
-    mouse_drag = TDict(allow_none=False, default_value=dict()).tag(sync=False)
-    mouse_move = TDict(allow_none=False, default_value=dict()).tag(sync=False)
-    mouse_down = TDict(allow_none=False, default_value=dict()).tag(sync=False)
-    mouse_up = TDict(allow_none=False, default_value=dict()).tag(sync=False)
+    # Canvas dimensions (pixel data)
+    width = traitlets.Int(8).tag(sync=True)
+    height = traitlets.Int(8).tag(sync=True)
+
+    # CSS layout properties
+    css_width = traitlets.Unicode("auto").tag(sync=True)
+    css_height = traitlets.Unicode("auto").tag(sync=True)
+    css_max_width = traitlets.Unicode("100%").tag(sync=True)
+    css_max_height = traitlets.Unicode("none").tag(sync=True)
+
+    # Backing image field - not synced, uses Tensor trait
+    image = TTensor(allow_none=True).tag(sync=False)
+
+    # Image data as bytes - synced to frontend
+    _image_data = traitlets.Bytes().tag(sync=True)
+
+    _esm = """
+    function render({ model, el }) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        
+        // Base canvas styles
+        canvas.style.imageRendering = "pixelated";
+        canvas.style.border = "1px solid #ccc";
+        canvas.style.display = "block";
+        
+        function updateCanvas() {
+            const width = model.get("width");
+            const height = model.get("height");
+            const rawData = model.get("_image_data");
+            
+            console.log("Canvas update:", width, height, rawData ? rawData.byteLength : 0);
+            
+            // Set canvas pixel dimensions
+            canvas.width = width;
+            canvas.height = height;
+            
+            if (rawData && rawData.byteLength > 0) {
+                const imageData = ctx.createImageData(width, height);
+                
+                // The key fix: handle the ArrayBuffer properly
+                let uint8Array;
+                if (rawData instanceof ArrayBuffer) {
+                    uint8Array = new Uint8Array(rawData);
+                } else if (rawData.buffer) {
+                    // Handle typed arrays or DataView
+                    uint8Array = new Uint8Array(rawData.buffer, rawData.byteOffset, rawData.byteLength);
+                } else {
+                    // Fallback: try to create directly
+                    uint8Array = new Uint8Array(rawData);
+                }
+                
+                console.log("Expected bytes:", width * height * 4, "Got:", uint8Array.length);
+                
+                if (uint8Array.length > 0) {
+                    imageData.data.set(uint8Array);
+                    ctx.putImageData(imageData, 0, 0);
+                    console.log("Canvas updated successfully");
+                } else {
+                    console.log("Uint8Array is empty");
+                }
+            } else {
+                console.log("No image data to display");
+            }
+        }
+        
+        function updateStyles() {
+            // Apply CSS layout properties
+            canvas.style.width = model.get("css_width");
+            canvas.style.height = model.get("css_height");
+            canvas.style.maxWidth = model.get("css_max_width");
+            canvas.style.maxHeight = model.get("css_max_height");
+        }
+        
+        // Listen for changes
+        model.on("change:_image_data change:width change:height", updateCanvas);
+        model.on("change:css_width change:css_height change:css_max_width change:css_max_height", updateStyles);
+        
+        // Initial render
+        updateCanvas();
+        updateStyles();
+        
+        el.appendChild(canvas);
+    }
+    export default { render };
+    """
 
     def __init__(
         self,
-        image: Optional[SupportedTensor] = None,
-        layers: int = 1,
+        image: Optional[np.ndarray] = None,
         **kwargs,
-    ):
+    ) -> None:
+        """Initialize the canvas widget.
 
-        self._canvas = ipycanvas.MultiCanvas(
-            n_canvases=layers,
-            width=1,
-            height=1,
-            layout=W.Layout(
-                width="100%",
-                height="auto",
-                border="1px solid black",
-                # visibility="visible",
-            ),
-        )
-        self._canvas.add_class("nearest_interpolation")
-
-        self._mouse_down_event = E.Event(
-            source=self._canvas,
-            watched_events=["mousedown"],
-            prevent_default_action=True,
-        )
-        self._mouse_down_event.on_dom_event(self._on_canvas_mousedown)
-
-        self._mouse_up_event = E.Event(
-            source=self._canvas,
-            watched_events=["mouseup"],
-            prevent_default_action=True,
-        )
-        self._mouse_up_event.on_dom_event(self._on_canvas_mouseup)
-
-        # Add drag event handling
-        self._mouse_move_event = E.Event(
-            source=self._canvas,
-            watched_events=["mousemove"],
-            prevent_default_action=True,
-        )
-        self._mouse_move_event.on_dom_event(self._on_canvas_mousemove)
-
-        # event state - internal use to handle combined events like drag, click, etc.
-        self._mouse_down_position = None  # used by other mouse event handlers
-
+        Args:
+            image (Optional[np.ndarray]): Initial image array with shape (H, W, 3) or (H, W, 4). Defaults to None.
+            **kwargs: Additional keyword arguments passed to parent.
+        """
+        # Initialize width and height from image if provided
+        if image is not None:
+            height, width = image.shape[:2]
+        else:
+            width, height = 8, 8  # Default size
+        self._hold = False
         super().__init__(
-            [W.HTML(_NEAREST_STYLE, layout=_STYLE_HTML_LAYOUT), self._canvas],
-            layout=W.Layout(
-                width="100%",
-                height="auto",  # let height follow aspect
-                aspect_ratio="auto",  # updated dynamically
-                overflow="hidden",
-                position="relative",
-            ),
+            width=width,
+            height=height,
             **kwargs,
         )
-        self.image = image
 
-    def hide(self):
-        self._canvas.layout.visibility = "hidden"
+        self.observe(self._refresh_internal, names=["image"])
+        if image is not None:
+            self.image = image
 
-    def show(self):
-        self._canvas.layout.visibility = "visible"
-
-    @property
-    def canvas(self) -> Optional[ipycanvas.MultiCanvas]:
-        return self._canvas
-
-    def get_canvas(self, layer: int = 0) -> ipycanvas.Canvas:
-        return self._canvas[layer]
-
-    def clear_canvas(self, layer: int = 0):
-        self._canvas[layer].clear()
-
-    def observe_mouse_click(self, callback: Callable):
-        self.observe(callback, "mouse_click")
-
-    def observe_mouse_drag(self, callback: Callable):
-        self.observe(callback, "mouse_drag")
-
-    def observe_mouse_move(self, callback: Callable):
-        self.observe(callback, "mouse_move")
-
-    def observe_mouse_down(self, callback: Callable):
-        self.observe(callback, "mouse_down")
-
-    def observe_mouse_up(self, callback: Callable):
-        self.observe(callback, "mouse_up")
-
-    @property
-    def layers(self) -> int:
-        return len(self._canvas._canvases)
-
-    @property
-    def size(self) -> tuple[int, int]:
-        if self.image is None:
-            return (0, 0)
-        return self.image.shape[-1], self.image.shape[-2]
-
-    def on_click(self, event: dict):
-        """Called when the user clicks on the image, the `self.click` traitlet should be updated here (always call super().on_click if you override this.)"""
-        self.mouse_click = event
-
-    def on_drag(self, event: dict):
-        """Called when the user drags on the image, the `self.drag` traitlet should be updated here (always call super().on_drag if you override this.)"""
-        self.mouse_drag = event
-
-    def on_mouse_move(self, event: dict):
-        pass  # TODO
-
-    def on_mouse_down(self, event: dict):
-        pass  # TODO
-
-    def on_mouse_up(self, event: dict):
-        pass  # TODO
-
-    def _on_canvas_mousedown(self, raw_event: dict):
-        # dom position of the mouse down event, used by click and drag event handlers
-        self._mouse_down_position = (raw_event["relativeX"], raw_event["relativeY"])
-
-    def _on_canvas_mouseup(self, raw_event: dict):
-        if self._mouse_down_position is None:
-            return  # something weird happened, ignore the event
-
-        x_dom, y_dom = raw_event["relativeX"], raw_event["relativeY"]
-        if (x_dom, y_dom) == self._mouse_down_position:
-            # trigger a click event
-            self.on_click(self._click_data(raw_event))
-        elif len(self.mouse_drag) > 0:  # a drag is currently in progress
-            # trigger end drag event
-            self.on_drag(self._drag_end_data(raw_event))
-
-        # clear all the event data
-        self.mouse_drag.clear()  # drag has ended
-        self.mouse_click.clear()  # click has ended
-        self._mouse_down_position = None
-
-    def _on_canvas_mousemove(self, raw_event: dict):
-        if self._mouse_down_position is None:  # is the mouse down?
-            return
-
-        # mouse is down, drag?
-        if len(self.mouse_drag) > 0:  # continue the drag
-            self.on_drag(self._drag_data(raw_event))
-        else:  # start a drag?
-            x_dom, y_dom = raw_event["relativeX"], raw_event["relativeY"]
-            dx = (x_dom - self._mouse_down_position[0]) ** 2
-            dy = (y_dom - self._mouse_down_position[1]) ** 2
-            if (dx + dy) ** 0.5 > DRAG_THRESHOLD:
-
-                self.on_drag(self._drag_start_data(raw_event))
-
-    def _mouse_data(self, raw_event: dict):
-        x_dom, y_dom = raw_event["relativeX"], raw_event["relativeY"]
-        w_dom, h_dom = raw_event["boundingRectWidth"], raw_event["boundingRectHeight"]
-        w_orig, h_orig = self.size
-        return dict(
-            # image space
-            x=int(x_dom / w_dom * w_orig) if w_orig > 0 else 0,
-            y=int(y_dom / h_dom * h_orig) if h_orig > 0 else 0,
-            w=w_orig,
-            h=h_orig,
-            # client space
-            x_client=x_dom,
-            y_client=y_dom,
-            w_client=w_dom,
-            h_client=h_dom,
-        )
-
-    def _click_data(self, raw_event: dict):
-        return self._mouse_data(raw_event)
-
-    def _drag_data(self, raw_event: dict):
-        m = self._mouse_data(raw_event)
-        if len(self.mouse_drag) > 0:
-            x_start, y_start = self.mouse_drag["x_start"], self.mouse_drag["y_start"]
-        else:  # new start position
-            x_start, y_start = self._mouse_down_position
-            x_start = int(x_start / m["w_client"] * m["w"]) if m["w"] > 0 else 0
-            y_start = int(y_start / m["h_client"] * m["h"]) if m["h"] > 0 else 0
-
-        return dict(
-            **m,
-            x_start=x_start,
-            y_start=y_start,
-            is_start=False,
-            is_end=False,
-        )
-
-    def _drag_end_data(self, raw_event: dict):
-        data = self._drag_data(raw_event)
-        data["is_start"] = False
-        data["is_end"] = True
-        return data
-
-    def _drag_start_data(self, raw_event: dict):
-        data = self._drag_data(raw_event)
-        data["is_start"] = True
-        data["is_end"] = False
-        return data
-
-    def __getitem__(self, index):
-        """Access pixel data directly from the underlying image tensor."""
-        return self.image[index]
-
-    def __setitem__(self, index, value):
-        """Set pixel(s) in-place and refresh display directly."""
-        self.image[index] = value
-
-    @observe("image")
-    def _on_image_change(self, change):
-        """Handle image changes by updating the canvas."""
-        if change["new"] is None:
-            # self.hide()  # the image has been removed
-            return self.resize((0, 0))
-        _, h, w = change["new"].shape
-        self.resize((w, h))
-
-    def resize(self, size: tuple[int, int]):
-        # Set logical resolution of canvas
-        # must be positive to avoid a ipycanvas bug (downstream HTML issue)
-        size = (max(size[0], 1), max(size[1], 1))
-        self._canvas.width = size[0]
-        self._canvas.height = size[1]
-        # Dynamically update container's aspect ratio
-        self.layout.aspect_ratio = f"{size[0]} / {size[1]}"
-        self.refresh()
-
-    def _to_canvas_data(
-        self,
-        change: Optional[dict] = None,
-    ) -> tuple[np.ndarray, tuple[int, int]]:
-        """Convert the tensor to canvas data - set directly with `self._canvas.set_image_data`"""
-        if change is None and self.image is None:
-            return np.empty((3, 0, 0)), (0, 0)
-        elif change is None:
-            return np.array(F.to_pil_image(self.image)), (0, 0)
-        else:
-            return np.array(F.to_pil_image(change["new"])), (
-                change.get("x", 0),
-                change.get("y", 0),
-            )
-
-    def refresh(self, change: Optional[dict] = None):
-        """Refresh the canvas.
-
-        Default keys that may be provided in `change`:
-        - `new`: image data to display, expects an image tensor of shape (C, H, W).
-        - `x`: x-coordinate of the top-left corner of the image (defaults to 0).
-        - `y`: y-coordinate of the top-left corner of the image (defaults to 0).
-        - `layer`: canvas layer to refresh (defaults to 0).
-
-        All other keys are ignored, but may be used by subclass specific implementations of `refresh`.
+    def _on_image_change(self, change: dict) -> None:
+        """Handle changes to the backing image field.
 
         Args:
-            change (Optional[dict], optional): dictionary of change information. Defaults to None.
+            change (dict): The change dictionary from traitlets.
         """
-        layer = change.get("layer", 0) if change is not None else 0
-        data, (x, y) = self._to_canvas_data(change)
-        if data.size > 0:
-            self.get_canvas(layer).put_image_data(data, x=x, y=y)
+        new_image = change["new"]
+        if new_image is not None:
+            self._convert_image_to_bytes(new_image)
 
-    def hold(self, canvas: ipycanvas.Canvas):
-        """Batch draw on the given canvas using a context manager - this haults immediate mode repaints and will batch repaint whent the context manager exits.
+    def _convert_image_to_bytes(self, tensor: SupportedTensor) -> bytes:
+        """Convert image array to bytes and update synced fields."""
+        image_trait: TTensor = self.traits()["image"]
+        dependency: OptionalDependency = image_trait.get_dependency(self, tensor)
+        array = dependency.to_numpy_image(tensor)
+        assert array.ndim == 3
+        assert array.shape[2] == 4  # HWC format RGBA
+        assert array.dtype == np.uint8
+        self.width = array.shape[1]
+        self.height = array.shape[0]
+        return array.tobytes()
 
-        Example:
+    def _refresh_internal(self, _) -> None:
+        """Refresh the image display."""
+        if self._hold:  # wait until hold is released
+            return
+        if self.image is None:
+            pass  # TODO handle this..
+        self._image_data = self._convert_image_to_bytes(self.image)
 
-        ```python
-        canvas = image.get_canvas(0)
-        with image.hold(canvas):
-            canvas.clear()
-            canvas.draw_circle(100, 100, 10)
-        ```
+    def refresh(self) -> None:
+        """Refresh the image display."""
+        self._refresh_internal(None)  # not used?
+
+    @property
+    def shape(self) -> tuple[int, int, int]:
+        """Get the shape of the image."""
+        return self.image.shape
+
+    def __setitem__(self, index: Any, value: SupportedTensor) -> None:
+        """Set pixels via tensor indexing - any operation that is supported by the ML framework in use will work.
 
         Args:
-            canvas (ipycanvas.Canvas): canvas to draw on.
+            index (Any): The index to set the pixel at.
+            value (SupportedTensor): The value to set the pixel to.
+        """
+        self.image[index] = value
+        self._refresh_internal(None)
+
+    def __getitem__(self, key):
+        """Get pixels using array indexing syntax.
+
+        Args:
+            key: Index or slice for pixel selection
 
         Returns:
-            Any: batch draw context manager.
+            np.ndarray: Selected pixel data
         """
-        return ipycanvas.hold_canvas(canvas)
+        if self.image is None:
+            raise ValueError("No image data available")
 
-    def __repr__(self):
-        return f"Image({[self.layers, *self.size]})"
+        return self.image[key]
 
-    def __str__(self):
-        return self.__repr__()
+    @contextmanager
+    def hold(self):
+        """Context manager to suppress immediate repaint.
+
+        Multiple pixel operations can be performed without triggering immediate updates to the display. The display is updated once when exiting the context.
+
+        Example:
+        ```python
+            with image.hold():
+                image[10:20, 10:20] = [255, 0, 0]  # Red square
+                image[30:40, 30:40] = [0, 255, 0]  # Green square
+                image[50:60, 50:60] = [0, 0, 255]  # Blue square
+            # Display updates here with all changes at once
+        ```
+        """
+        self._hold = True
+        try:
+            yield self
+        finally:
+            self._hold = False
+            # Trigger a single update with the current image state
+            if self.image is not None:
+                self.refresh()
