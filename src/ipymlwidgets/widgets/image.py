@@ -24,6 +24,11 @@ class Image(anywidget.AnyWidget):
     css_max_width = traitlets.Unicode("100%").tag(sync=True)
     css_max_height = traitlets.Unicode("none").tag(sync=True)
 
+    # Client-side rendered size (actual display size)
+    client_size = traitlets.Tuple(
+        traitlets.Int(), traitlets.Int(), default_value=(0, 0)
+    ).tag(sync=True)
+
     # Backing image field - not synced, uses Tensor trait
     image = TTensor(allow_none=True).tag(sync=False)
 
@@ -39,6 +44,23 @@ class Image(anywidget.AnyWidget):
         canvas.style.imageRendering = "pixelated";
         canvas.style.border = "1px solid #ccc";
         canvas.style.display = "block";
+        
+        // ResizeObserver to track actual rendered size
+        let resizeObserver;
+        
+        function updateClientSize() {
+            const rect = canvas.getBoundingClientRect();
+            const clientWidth = Math.round(rect.width);
+            const clientHeight = Math.round(rect.height);
+            
+            // Only update if size actually changed
+            const currentSize = model.get("client_size");
+            if (currentSize[0] !== clientWidth || currentSize[1] !== clientHeight) {
+                model.set("client_size", [clientWidth, clientHeight]);
+                model.save_changes();
+                console.log("Client size updated:", clientWidth, clientHeight);
+            }
+        }
         
         function updateCanvas() {
             const width = model.get("width");
@@ -78,6 +100,9 @@ class Image(anywidget.AnyWidget):
             } else {
                 console.log("No image data to display");
             }
+            
+            // Update client size after canvas update
+            setTimeout(updateClientSize, 0);
         }
         
         function updateStyles() {
@@ -86,6 +111,21 @@ class Image(anywidget.AnyWidget):
             canvas.style.height = model.get("css_height");
             canvas.style.maxWidth = model.get("css_max_width");
             canvas.style.maxHeight = model.get("css_max_height");
+            
+            // Update client size after style changes
+            setTimeout(updateClientSize, 0);
+        }
+        
+        // Set up ResizeObserver if available
+        if (typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    if (entry.target === canvas) {
+                        updateClientSize();
+                    }
+                }
+            });
+            resizeObserver.observe(canvas);
         }
         
         // Listen for changes
@@ -96,7 +136,15 @@ class Image(anywidget.AnyWidget):
         updateCanvas();
         updateStyles();
         
+        // Cleanup function
         el.appendChild(canvas);
+        
+        // Return cleanup function
+        return () => {
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+            }
+        };
     }
     export default { render };
     """
@@ -139,7 +187,14 @@ class Image(anywidget.AnyWidget):
             self._convert_image_to_bytes(new_image)
 
     def _convert_image_to_bytes(self, tensor: SupportedTensor) -> bytes:
-        """Convert image array to bytes and update synced fields."""
+        """Convert image array to bytes and update synced fields.
+
+        Args:
+            tensor (SupportedTensor): Image tensor to convert.
+
+        Returns:
+            bytes: Converted image data as bytes.
+        """
         image_trait: TTensor = self.traits()["image"]
         dependency: OptionalDependency = image_trait.get_dependency(self, tensor)
         array = dependency.to_numpy_image(tensor)
@@ -164,8 +219,21 @@ class Image(anywidget.AnyWidget):
 
     @property
     def shape(self) -> tuple[int, int, int]:
-        """Get the shape of the image."""
+        """Get the shape of the image.
+
+        Returns:
+            tuple[int, int, int]: Shape of the image as (height, width, channels).
+        """
         return self.image.shape
+
+    @property
+    def rendered_size(self) -> tuple[int, int]:
+        """Get the actual rendered size of the widget in pixels.
+
+        Returns:
+            tuple[int, int]: Rendered size as (width, height) in pixels.
+        """
+        return self.client_size
 
     def __setitem__(self, index: Any, value: SupportedTensor) -> None:
         """Set pixels via tensor indexing - any operation that is supported by the ML framework in use will work.
