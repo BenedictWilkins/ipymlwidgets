@@ -29,7 +29,9 @@ class Canvas(anywidget.AnyWidget):
     ).tag(sync=True)
 
     # Buffered patches for when widget is not ready
-    _buffer = traitlets.List().tag(sync=True)
+    _buffer = traitlets.List([]).tag(sync=True)
+    # used to buffer patches when hold is on
+    _buffer_hold = traitlets.List([]).tag(sync=False)
 
     _esm = """
     function render({ model, el }) {
@@ -73,7 +75,6 @@ class Canvas(anywidget.AnyWidget):
         }
         
         function drawPatch(patchData) {
-            
             if (patchData && patchData.data) {
                 const { x, y, width, height, data } = patchData;
                 
@@ -127,6 +128,7 @@ class Canvas(anywidget.AnyWidget):
                 drawPatch(patch);
             }
             model.set("_buffer", []);
+            model.set("_buffer_repaint", false);
             model.save_changes();
         }
         
@@ -180,6 +182,8 @@ class Canvas(anywidget.AnyWidget):
         
         // Process any patches that were buffered
         const bufferedPatches = model.get("_buffer");
+        console.log("JS: Processing patches buffered before ready", bufferedPatches.length);
+
         if (bufferedPatches && bufferedPatches.length > 0) {
             console.log("JS: Processing patches buffered before ready");
             drawPatches();
@@ -215,7 +219,7 @@ class Canvas(anywidget.AnyWidget):
             height=height,
             **kwargs,
         )
-        # self._hold = False
+        self._hold = False
 
     def set_image(self, image_data: bytes | np.ndarray) -> None:
         """Set the entire image data for the canvas using a full-size patch.
@@ -250,43 +254,29 @@ class Canvas(anywidget.AnyWidget):
             "height": height,
             "data": data,
         }
-        # add to buffer, this will trigger traitlet change event and repaint
-        buffer = list(self._buffer)
-        buffer.append(patch_dict)
-        self._buffer = buffer
+        if self._hold:
+            self._buffer_hold.append(patch_dict)
+        else:
+            buffer = list(self._buffer)
+            buffer.append(patch_dict)
+            self._buffer = buffer
+
+        if not self._hold:
+            self._buffer_repaint = True
 
     def clear(self) -> None:
         """Clear the canvas by setting an empty patch."""
         self.patch_data = {}
 
-    # @contextmanager
-    # def hold(self):
-    #     """Context manager to suppress immediate repaint.
-
-    #     Multiple patch operations can be performed without triggering immediate updates to the display.
-    #     The display is updated once when exiting the context.
-
-    #     Example:
-    #     ```python
-    #         with canvas.hold():
-    #             canvas.set_patch(10, 10, 10, 10, red_patch)
-    #             canvas.set_patch(30, 30, 10, 10, blue_patch)
-    #             canvas.set_patch(50, 50, 10, 10, green_patch)
-    #         # Display updates here with all changes at once
-    #     ```
-    #     """
-    #     self._hold = True
-    #     try:
-    #         yield self
-    #     finally:
-    #         self._hold = False
-    #         # Apply all buffered patches at once
-    #         if self._buffer:
-    #             # Clear the buffer and apply the last patch (or we could apply all)
-    #             patches = list(self._buffer)
-    #             self._buffer = []
-    #             if patches:
-    #                 self.patch_data = patches[-1]  # Apply the last patch
+    @contextmanager
+    def hold(self):
+        self._hold = True
+        try:
+            yield self
+        finally:
+            self._hold = False
+            self._buffer = self._buffer + self._buffer_hold
+            self._buffer_hold = []
 
 
 def asbytes(image_data: Any, width: int, height: int) -> bytes:
