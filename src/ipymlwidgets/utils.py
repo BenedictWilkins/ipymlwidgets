@@ -5,6 +5,21 @@ import PIL as pillow
 
 import distinctipy
 
+from traitlets import TraitType
+
+
+class TensorTrait(TraitType):
+    """A trait for torch tensors that supports custom validation."""
+
+    info_text = "a torch.Tensor or None"
+
+    def validate(self, obj, value):
+        if value is None:
+            return value
+        if not isinstance(value, torch.Tensor):
+            self.error(obj, value)
+        return value
+
 
 def get_colors(
     n_colors: int, pastel_factor: float = 0.7, alpha: float = 1.0
@@ -57,3 +72,53 @@ def color_to_hex(color: Any) -> str:
         return "#{:02X}{:02X}{:02X}".format(*color)
     else:
         return "#{:02X}{:02X}{:02X}{:02X}".format(*color)
+
+
+def resolve_colors(labels: torch.Tensor, cmap: torch.Tensor):
+    """Resolve the colors for the classes.
+
+    Args:
+        labels (torch.Tensor[N]): Tensor containing label indicies.
+        cmap (torch.Tensor[C,4]): Tensor of colors (RGBA).
+
+    Returns:
+        torch.Tensor[N,4]: Colors (RGBA) for each label in `labels`.
+    """
+    if cmap.ndim != 2:
+        raise ValueError(
+            f"Argument: `cmap` expected rgba colour tensor of shape [M,4] but got shape: {cmap.shape}"
+        )
+    if cmap.shape[-1] == 3:  # add alpha channel if it doesnt exist
+        cmap = torch.cat([cmap, torch.ones_like(cmap[..., :1]) * 255], dim=-1)
+    if cmap.shape[-1] != 4:
+        raise ValueError(
+            f"Argument: `cmap` expected rgba colour tensor of shape [M,4] but got shape: {cmap.shape}"
+        )
+
+    if labels.numel() == 0:  # no actual classes were provided
+        return cmap[:1].expand(labels.shape[0], -1)
+    else:
+        return cmap[labels.long()]
+
+
+def resolve_display_size(
+    image_size: tuple[int, int], display_size: int | tuple[int, int]
+):
+    """Get the display size for the image.
+
+    Args:
+        image_size (tuple[int, int]): The size of the image.
+        display_size (int | tuple[int, int]): The size of the display.
+
+    Returns:
+        tuple[int, int]: The size of the display.
+    """
+    if isinstance(display_size, int):
+        scale = display_size / image_size[0]
+        return (display_size, int(image_size[1] * scale))
+    elif isinstance(display_size, (tuple, list)):
+        return tuple(display_size)
+    else:
+        raise ValueError(
+            f"Argument: `display_size` expected int or tuple[int,int] but got {type(display_size)}"
+        )

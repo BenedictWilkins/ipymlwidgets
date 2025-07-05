@@ -1,13 +1,13 @@
 """Image widget that displays PyTorch tensors using ipycanvas."""
 
 import numpy as np
-import torch
 from typing import Optional, Callable
 from traitlets import observe, Instance, Dict as TDict
 import ipycanvas
 import ipywidgets as W
 import ipyevents as E
 import torchvision.transforms.v2.functional as F
+from ipymlwidgets.traits import Tensor, SupportedTensor
 
 _NEAREST_STYLE = """
     <style>
@@ -16,7 +16,7 @@ _NEAREST_STYLE = """
         image-rendering: crisp-edges !important;
     }
     </style>
-    """
+"""
 DRAG_THRESHOLD = 3  # client space threshold for drag start
 
 _STYLE_HTML_LAYOUT = W.Layout(
@@ -27,7 +27,8 @@ _STYLE_HTML_LAYOUT = W.Layout(
 class Image(W.Box):
     """A widget that displays PyTorch tensors as images using ipycanvas."""
 
-    image = Instance(torch.Tensor, allow_none=True).tag(sync=False)
+    # always convert the incoming tensor value to numpy
+    image = Tensor(allow_none=True).tag(sync=False)
     # events
     mouse_click = TDict(allow_none=False, default_value=dict()).tag(sync=False)
     mouse_drag = TDict(allow_none=False, default_value=dict()).tag(sync=False)
@@ -37,18 +38,20 @@ class Image(W.Box):
 
     def __init__(
         self,
-        image: Optional[torch.Tensor] = None,
+        image: Optional[SupportedTensor] = None,
         layers: int = 1,
         **kwargs,
     ):
+
         self._canvas = ipycanvas.MultiCanvas(
             n_canvases=layers,
-            width=320,
-            height=320,
+            width=1,
+            height=1,
             layout=W.Layout(
                 width="100%",
                 height="auto",
                 border="1px solid black",
+                # visibility="visible",
             ),
         )
         self._canvas.add_class("nearest_interpolation")
@@ -89,12 +92,17 @@ class Image(W.Box):
             ),
             **kwargs,
         )
-        if image is not None:
-            self.image = image
+        self.image = image
+
+    def hide(self):
+        self._canvas.layout.visibility = "hidden"
+
+    def show(self):
+        self._canvas.layout.visibility = "visible"
 
     @property
-    def layer_count(self) -> int:
-        return len(self._canvas._canvases)
+    def canvas(self) -> Optional[ipycanvas.MultiCanvas]:
+        return self._canvas
 
     def get_canvas(self, layer: int = 0) -> ipycanvas.Canvas:
         return self._canvas[layer]
@@ -133,17 +141,16 @@ class Image(W.Box):
 
     def on_drag(self, event: dict):
         """Called when the user drags on the image, the `self.drag` traitlet should be updated here (always call super().on_drag if you override this.)"""
-        # print("ON DRAG")
         self.mouse_drag = event
 
     def on_mouse_move(self, event: dict):
-        pass
+        pass  # TODO
 
     def on_mouse_down(self, event: dict):
-        pass
+        pass  # TODO
 
     def on_mouse_up(self, event: dict):
-        pass
+        pass  # TODO
 
     def _on_canvas_mousedown(self, raw_event: dict):
         # dom position of the mouse down event, used by click and drag event handlers
@@ -241,20 +248,30 @@ class Image(W.Box):
     @observe("image")
     def _on_image_change(self, change):
         """Handle image changes by updating the canvas."""
+        if change["new"] is None:
+            # self.hide()  # the image has been removed
+            return self.resize((0, 0))
         _, h, w = change["new"].shape
-        # Set logical resolution of canvas (important for pixelated scaling)
-        self._canvas.width = w
-        self._canvas.height = h
+        self.resize((w, h))
+
+    def resize(self, size: tuple[int, int]):
+        # Set logical resolution of canvas
+        # must be positive to avoid a ipycanvas bug (downstream HTML issue)
+        size = (max(size[0], 1), max(size[1], 1))
+        self._canvas.width = size[0]
+        self._canvas.height = size[1]
         # Dynamically update container's aspect ratio
-        self.layout.aspect_ratio = f"{h} / {w}"
-        self.refresh(change)
+        self.layout.aspect_ratio = f"{size[0]} / {size[1]}"
+        self.refresh()
 
     def _to_canvas_data(
         self,
         change: Optional[dict] = None,
     ) -> tuple[np.ndarray, tuple[int, int]]:
         """Convert the tensor to canvas data - set directly with `self._canvas.set_image_data`"""
-        if change is None:
+        if change is None and self.image is None:
+            return np.empty((3, 0, 0)), (0, 0)
+        elif change is None:
             return np.array(F.to_pil_image(self.image)), (0, 0)
         else:
             return np.array(F.to_pil_image(change["new"])), (
@@ -276,9 +293,10 @@ class Image(W.Box):
         Args:
             change (Optional[dict], optional): dictionary of change information. Defaults to None.
         """
-        layer = change.get("layer", 0)
+        layer = change.get("layer", 0) if change is not None else 0
         data, (x, y) = self._to_canvas_data(change)
-        self.get_canvas(layer).put_image_data(data, x=x, y=y)
+        if data.size > 0:
+            self.get_canvas(layer).put_image_data(data, x=x, y=y)
 
     def hold(self, canvas: ipycanvas.Canvas):
         """Batch draw on the given canvas using a context manager - this haults immediate mode repaints and will batch repaint whent the context manager exits.
@@ -286,7 +304,8 @@ class Image(W.Box):
         Example:
 
         ```python
-        with self.hold(canvas):
+        canvas = image.get_canvas(0)
+        with image.hold(canvas):
             canvas.clear()
             canvas.draw_circle(100, 100, 10)
         ```
