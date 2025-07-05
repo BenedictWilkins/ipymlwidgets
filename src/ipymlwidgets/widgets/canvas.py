@@ -152,12 +152,38 @@ class Canvas(anywidget.AnyWidget):
             }
         }
         
+        // Draw a rectangle (box) on the specified layer.
+        // boxData: {
+        //   xyxy: [x0, y0, x1, y1],
+        //   color: CSS color string or [r,g,b,a],
+        //   thickness: int (optional, default 1)
+        // }
+        function drawBox(boxData, layerIndex) {
+            if (!boxData || layerIndex >= contexts.length) return;
+            const ctx = contexts[layerIndex];
+            const { xyxy, color, thickness } = boxData;
+            if (!xyxy || xyxy.length !== 4) return;
+            const [x0, y0, x1, y1] = xyxy;
+            ctx.save();
+            ctx.strokeStyle = Array.isArray(color)
+                ? `rgba(${color[0]},${color[1]},${color[2]},${color.length > 3 ? color[3] / 255 : 1})`
+                : (color || 'red');
+            ctx.lineWidth = thickness || 1;
+            ctx.beginPath();
+            ctx.rect(x0, y0, x1 - x0, y1 - y0);
+            ctx.stroke();
+            ctx.restore();
+        }
+        
         function drawPatches() {
             const bufferedPatches = model.get("_buffer");
-            
             for (const patch of bufferedPatches) {
                 const layerIndex = patch.layer || 0;
-                drawPatch(patch, layerIndex);
+                if (patch.type === 'box') {
+                    drawBox(patch, layerIndex);
+                } else {
+                    drawPatch(patch, layerIndex);
+                }
             }
             model.set("_buffer", []);
             model.save_changes();
@@ -425,6 +451,37 @@ class Canvas(anywidget.AnyWidget):
 
     def __str__(self):
         return self.__repr__()
+
+    def draw_rect(
+        self,
+        xyxy: tuple[int, int, int, int],
+        color: str | list[int],
+        thickness: int = 1,
+        layer: int = 0,
+    ) -> None:
+        """Draw a rectangle (box) on the canvas at the specified layer.
+
+        Args:
+            xyxy (tuple[int, int, int, int]): (x0, y0, x1, y1) coordinates of the rectangle.
+            color (str | list[int]): CSS color string or [r, g, b, a] list (0-255).
+            thickness (int): Border thickness in pixels. Defaults to 1.
+            layer (int): Layer index to draw on. Defaults to 0.
+        Returns:
+            None: This method does not return a value.
+        """
+        box_patch = {
+            "type": "box",
+            "xyxy": xyxy,
+            "color": color,
+            "thickness": thickness,
+            "layer": layer,
+        }
+        if self._hold:
+            self._buffer_hold.append(box_patch)
+        else:
+            buffer = list(self._buffer)
+            buffer.append(box_patch)
+            self._buffer = buffer
 
 
 def asbytes(image_data: Any, width: int, height: int) -> bytes:

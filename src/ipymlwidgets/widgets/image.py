@@ -1,8 +1,5 @@
-import anywidget
-import traitlets
 import numpy as np
 from typing import Optional, Any
-from contextlib import contextmanager
 
 from ipymlwidgets.widgets.canvas import Canvas
 from ipymlwidgets.traits.tensor import (
@@ -20,7 +17,7 @@ class Image(Canvas):
 
     def __init__(
         self,
-        image: Optional[np.ndarray] = None,
+        image: Optional[SupportedTensor] = None,
         **kwargs,
     ) -> None:
         """Initialize the canvas widget.
