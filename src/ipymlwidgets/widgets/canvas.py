@@ -1,7 +1,9 @@
 import anywidget
 import traitlets
 import numpy as np
-from typing import Optional
+from typing import Optional, Any, List, Dict
+import time
+from contextlib import contextmanager
 
 
 class Canvas(anywidget.AnyWidget):
@@ -26,11 +28,16 @@ class Canvas(anywidget.AnyWidget):
         traitlets.Int(), traitlets.Int(), default_value=(0, 0)
     ).tag(sync=True)
 
-    # Image data as bytes - synced to frontend
-    _image_data = traitlets.Bytes().tag(sync=True)
+    # Buffered patches for when widget is not ready
+    _buffer = traitlets.List().tag(sync=True)
 
     _esm = """
     function render({ model, el }) {
+        console.log("JS: Render function called");
+        console.log("JS: Model:", model);
+        console.log("JS: Model attributes:", model.attributes);
+        console.log("JS: Model traits:", model.attributes ? Object.keys(model.attributes) : "No attributes");
+        
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         
@@ -59,55 +66,77 @@ class Canvas(anywidget.AnyWidget):
         function updateCanvas() {
             const width = model.get("width");
             const height = model.get("height");
-            const rawData = model.get("_image_data");
-            
-            console.log("Canvas update:", width, height, rawData ? rawData.byteLength : 0);
-            
+            console.log("JS: Canvas update:", width, height);
             // Set canvas pixel dimensions
             canvas.width = width;
             canvas.height = height;
+        }
+        
+        function drawPatch(patchData) {
             
-            if (rawData && rawData.byteLength > 0) {
-                const imageData = ctx.createImageData(width, height);
+            if (patchData && patchData.data) {
+                const { x, y, width, height, data } = patchData;
+                
+                console.log("JS: Patch update:", x, y, width, height, data.length);
+                console.log("JS: Data type:", typeof data);
+                console.log("JS: Data constructor:", data.constructor.name);
+                
+                // Create ImageData for the patch
+                const patchImageData = ctx.createImageData(width, height);
                 
                 // Handle the ArrayBuffer properly
                 let uint8Array;
-                if (rawData instanceof ArrayBuffer) {
-                    uint8Array = new Uint8Array(rawData);
-                } else if (rawData.buffer) {
-                    // Handle typed arrays or DataView
-                    uint8Array = new Uint8Array(rawData.buffer, rawData.byteOffset, rawData.byteLength);
+                if (data instanceof ArrayBuffer) {
+                    console.log("JS: Data is ArrayBuffer");
+                    uint8Array = new Uint8Array(data);
+                } else if (data.buffer) {
+                    console.log("JS: Data has buffer property");
+                    uint8Array = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
                 } else {
-                    // Fallback: try to create directly
-                    uint8Array = new Uint8Array(rawData);
+                    console.log("JS: Data is neither ArrayBuffer nor has buffer, trying direct conversion");
+                    uint8Array = new Uint8Array(data);
                 }
                 
-                console.log("Expected bytes:", width * height * 4, "Got:", uint8Array.length);
+                console.log("JS: uint8Array length:", uint8Array.length);
+                console.log("JS: Expected length:", width * height * 4);
+                console.log("JS: First few bytes:", uint8Array.slice(0, 16));
                 
                 if (uint8Array.length > 0) {
-                    imageData.data.set(uint8Array);
-                    ctx.putImageData(imageData, 0, 0);
-                    console.log("Canvas updated successfully");
+                    patchImageData.data.set(uint8Array);
+                    ctx.putImageData(patchImageData, x, y);
+                    console.log("JS: Patch updated successfully");
                 } else {
-                    console.log("Uint8Array is empty");
+                    console.log("JS: Patch data is empty");
                 }
             } else {
-                console.log("No image data to display");
+                console.log("JS: No patch data or data is missing");
+                console.log("JS: patchData exists:", !!patchData);
+                if (patchData) {
+                    console.log("JS: patchData keys:", Object.keys(patchData));
+                    console.log("JS: patchData.data exists:", !!patchData.data);
+                }
             }
+        }
+        
+        function drawPatches() {
+            const bufferedPatches = model.get("_buffer");
+            console.log("JS: Processing buffered patches:", bufferedPatches.length);
             
-            // Update client size after canvas update
-            setTimeout(updateClientSize, 0);
+            for (const patch of bufferedPatches) {
+                console.log("JS: Applying buffered patch:", patch);
+                drawPatch(patch);
+            }
+            model.set("_buffer", []);
+            model.save_changes();
         }
         
         function updateStyles() {
+            console.log("JS: updateStyles called");
             // Apply CSS layout properties
             canvas.style.width = model.get("css_width");
             canvas.style.height = model.get("css_height");
             canvas.style.maxWidth = model.get("css_max_width");
             canvas.style.maxHeight = model.get("css_max_height");
-            
-            // Update client size after style changes
-            setTimeout(updateClientSize, 0);
         }
         
         // Set up ResizeObserver if available
@@ -122,15 +151,40 @@ class Canvas(anywidget.AnyWidget):
             resizeObserver.observe(canvas);
         }
         
-        // Listen for changes
-        model.on("change:_image_data change:width change:height", updateCanvas);
-        model.on("change:css_width change:css_height change:css_max_width change:css_max_height", updateStyles);
+        console.log("JS: Setting up event listeners...");
         
-        // Initial render
+        // Listen for changes - use individual listeners for better debugging
+        model.on("change:width", () => {
+            console.log("JS: width changed");
+            updateCanvas();
+        });
+        model.on("change:height", () => {
+            console.log("JS: height changed");
+            updateCanvas();
+        });
+        model.on("change:_buffer", () => {
+            console.log("JS: _buffer changed");
+            drawPatches();
+        });
+        model.on("change:css_width change:css_height change:css_max_width change:css_max_height", () => {
+            console.log("JS: CSS properties changed");
+            updateStyles();
+        });
+
+        console.log("JS: Event listeners set up successfully");
+        
+        // Initial render - just set up the canvas dimensions
+        console.log("JS: Performing initial render");
         updateCanvas();
         updateStyles();
         
-        // Cleanup function
+        // Process any patches that were buffered
+        const bufferedPatches = model.get("_buffer");
+        if (bufferedPatches && bufferedPatches.length > 0) {
+            console.log("JS: Processing patches buffered before ready");
+            drawPatches();
+        }
+
         el.appendChild(canvas);
         
         // Return cleanup function
@@ -161,15 +215,154 @@ class Canvas(anywidget.AnyWidget):
             height=height,
             **kwargs,
         )
+        # self._hold = False
 
-    def set_image_data(self, image_data: bytes) -> None:
-        """Set the raw image data for the canvas.
+    def set_image(self, image_data: bytes | np.ndarray) -> None:
+        """Set the entire image data for the canvas using a full-size patch.
 
         Args:
-            image_data (bytes): Raw RGBA image data as bytes.
+            image_data (bytes | np.ndarray): Raw RGBA image data as bytes or numpy array.
         """
-        self._image_data = image_data
+        self.set_patch(0, 0, self.width, self.height, image_data)
+
+    def set_patch(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        data: bytes | np.ndarray,
+    ) -> None:
+        """Set image data at a specific location using a patch.
+
+        Args:
+            x (int): X coordinate of the patch (left edge).
+            y (int): Y coordinate of the patch (top edge).
+            width (int): Width of the patch in pixels.
+            height (int): Height of the patch in pixels.
+            data (bytes | np.ndarray): Raw RGBA image data for the patch.
+        """
+        data = asbytes(data, width, height)
+        patch_dict = {
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+            "data": data,
+        }
+        # add to buffer, this will trigger traitlet change event and repaint
+        buffer = list(self._buffer)
+        buffer.append(patch_dict)
+        self._buffer = buffer
 
     def clear(self) -> None:
-        """Clear the canvas by setting empty image data."""
-        self._image_data = b""
+        """Clear the canvas by setting an empty patch."""
+        self.patch_data = {}
+
+    # @contextmanager
+    # def hold(self):
+    #     """Context manager to suppress immediate repaint.
+
+    #     Multiple patch operations can be performed without triggering immediate updates to the display.
+    #     The display is updated once when exiting the context.
+
+    #     Example:
+    #     ```python
+    #         with canvas.hold():
+    #             canvas.set_patch(10, 10, 10, 10, red_patch)
+    #             canvas.set_patch(30, 30, 10, 10, blue_patch)
+    #             canvas.set_patch(50, 50, 10, 10, green_patch)
+    #         # Display updates here with all changes at once
+    #     ```
+    #     """
+    #     self._hold = True
+    #     try:
+    #         yield self
+    #     finally:
+    #         self._hold = False
+    #         # Apply all buffered patches at once
+    #         if self._buffer:
+    #             # Clear the buffer and apply the last patch (or we could apply all)
+    #             patches = list(self._buffer)
+    #             self._buffer = []
+    #             if patches:
+    #                 self.patch_data = patches[-1]  # Apply the last patch
+
+
+def asbytes(image_data: Any, width: int, height: int) -> bytes:
+    """Convert image data to bytes format.
+
+    Args:
+        image_data (Any): Image data as numpy array or bytes.
+        width (int): Expected width of the image.
+        height (int): Expected height of the image.
+
+    Returns:
+        bytes: Image data as bytes.
+
+    Raises:
+        ValueError: If image_data is not the expected type or size.
+    """
+    if isinstance(image_data, np.ndarray):
+        if image_data.shape != (height, width, 4):
+            raise ValueError(
+                f"Argument: `image_data` expected shape (H, W, 4) got {list(image_data.shape)}"
+            )
+        return image_data.tobytes()
+    elif isinstance(image_data, bytes):
+        if len(image_data) != height * width * 4:
+            raise ValueError(
+                f"Argument: `image_data` expected {height * width * 4} bytes, got {len(image_data)}"
+            )
+        return image_data
+    else:
+        raise ValueError(
+            f"Argument: `image_data` expected numpy array or bytes got {type(image_data)}"
+        )
+
+
+def create_demo_canvas() -> Canvas:
+    """Create a demo canvas with a basic checkerboard pattern.
+
+    Returns:
+        Canvas: A canvas widget with a checkerboard pattern.
+    """
+    # Create a 64x64 checkerboard
+    width, height = 64, 64
+    canvas = Canvas(width=width, height=height)
+
+    # Create checkerboard pattern
+    image_data = np.zeros((height, width, 4), dtype=np.uint8)
+
+    # Fill with checkerboard pattern
+    for y in range(height):
+        for x in range(width):
+            if (x // 8 + y // 8) % 2 == 0:
+                image_data[y, x] = [200, 200, 200, 255]  # Light gray
+            else:
+                image_data[y, x] = [100, 100, 100, 255]  # Dark gray
+
+    # Set the initial image using patch
+    canvas.set_image(image_data)
+
+    return canvas
+
+
+def demo_patch_updates(canvas: Canvas) -> None:
+    """Demonstrate patch updates on a canvas.
+
+    Args:
+        canvas (Canvas): The canvas to update with patches.
+    """
+    # Create a red square patch (16x16)
+    patch_size = 16
+    red_patch = np.full((patch_size, patch_size, 4), [255, 0, 0, 255], dtype=np.uint8)
+    canvas.set_patch(10, 10, patch_size, patch_size, red_patch)
+
+    # Create a blue square patch (16x16)
+    blue_patch = np.full((patch_size, patch_size, 4), [0, 0, 255, 255], dtype=np.uint8)
+    canvas.set_patch(30, 30, patch_size, patch_size, blue_patch)
+
+    # Create a green rectangle patch (32x8)
+    green_patch = np.full((8, 32, 4), [0, 255, 0, 255], dtype=np.uint8)
+    canvas.set_patch(16, 50, 32, 8, green_patch)
