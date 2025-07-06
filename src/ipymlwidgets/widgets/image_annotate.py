@@ -112,7 +112,7 @@ class ImageAnnotated(Image):
         width, height = self.client_size
         print(f"client_size: {width}, {height}")
         # Example: scale stroke width to be 1% of the smaller dimension, min 1, max 20
-        self._node_size = max(1, min(16, int(min(width, height) * 0.01)))
+        self._node_size = max(1, min(12, int(min(width, height) * 0.05)))
         #self._node_size = 2
         with self.hold_repaint(layer=LAYER_SELECTION):
             self.stroke_width = self._node_size

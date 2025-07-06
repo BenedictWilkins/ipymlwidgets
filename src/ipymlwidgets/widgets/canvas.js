@@ -15,7 +15,7 @@ function updateClientSize(model, wrapper) {
     }
 }
 
-function updateCanvas(model, canvases) {
+function updateCanvas(model, canvases, offCanvas) {
     const size = model.get("size");
     const width = size[0];
     const height = size[1];
@@ -24,6 +24,8 @@ function updateCanvas(model, canvases) {
         canvas.width = width;
         canvas.height = height;
     }
+    offCanvas.width = width;
+    offCanvas.height = height;
 }
 
 // --- Mouse Event Handling ---
@@ -394,7 +396,7 @@ function render({ model, el }) {
 
     // Initial render - just set up the canvas dimensions
     updateStyles(model, wrapper);
-    updateCanvas(model, canvases);
+    updateCanvas(model, canvases, offCanvas);
 
     // Setup mouse events
     const cleanupMouse = setupMouseEvents(model, wrapper, canvases);
@@ -414,7 +416,7 @@ function render({ model, el }) {
 
     // Listen for changes
     model.on("change:size", () => {
-        updateCanvas(model, canvases);
+        updateCanvas(model, canvases, offCanvas);
     });
 
     const buffer = []; // queue for incoming draw commands
