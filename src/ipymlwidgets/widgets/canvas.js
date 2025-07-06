@@ -131,20 +131,20 @@ function setupMouseEvents(model, wrapper, canvases) {
     };
 }
 
-function drawRect(data, ctx, model) {
-    if (!data) return;
-    const { rects, count } = data;
-    if (!rects || !count) {
-        console.log('[draw] No rects or count');
+function drawRect(command, ctx) {
+    if (!command.data) return;
+    const { data, count } = command;
+    if (!data || !count) {
+        console.log('[draw] No data or count');
         return;
     }
     let buffer;
-    if (rects instanceof ArrayBuffer) {
-        buffer = rects;
-    } else if (rects instanceof DataView) {
-        buffer = rects.buffer;
+    if (data instanceof ArrayBuffer) {
+        buffer = data;
+    } else if (data instanceof DataView) {
+        buffer = data.buffer;
     } else {
-        //console.log('[draw] rects is not ArrayBuffer or DataView:', rects);
+        //console.log('[draw] data is not ArrayBuffer or DataView:', data);
         return;
     }
     const intArr = new Int32Array(buffer);
@@ -194,8 +194,9 @@ function clear(ctx) {
 //
 // 1. Draw Rectangle
 //    {
-//      type: 'rect',
-//      rects: ArrayBuffer | DataView, // int32 array, shape [N, 4] (x0, y0, x1, y1) for N rectangles
+//      type: 'draw'
+//      shape: 'rect',
+//      data: ArrayBuffer | DataView, // int32 array, shape [N, 4] (x0, y0, x1, y1) for N rectangles
 //      count: number,                 // number of rectangles (N)
 //      layer: number                  // (optional) layer index (default 0)
 //    }
@@ -222,59 +223,80 @@ function clear(ctx) {
 //      type: 'set',
 //      name: string,                  // context property name, e.g. 'strokeStyle', 'lineWidth', 'fillStyle'
 //      value: any,                    // value to set
-//      layer: number                  // (optional) layer index (default 0)
+//      layer: number                  // layer to set property on
 //    }
 //
 // 5. Save Context State
 //    {
-//      type: 'save',
-//      layer: number                  // (optional) layer index (default 0)
+//      type: 'set',
+//      name: 'save',
+//      layer: number                 
 //    }
 //
 // 6. Restore Context State
 //    {
-//      type: 'restore',
-//      layer: number                  // (optional) layer index (default 0)
+//      type: 'set',
+//      name: 'restore',
+//      layer: number                  
 //    }
 //
 // All commands may include a 'layer' property to specify which canvas layer to use.
 // The buffer is expected to be ordered by layer, but this is not required for correctness.
 
 function draw(model, contexts) {
-    const buffer = model.get("_buffer");
-    // Stable sort by layer (default 0)
-    const sortedBuffer = buffer.slice().sort((a, b) => (a.layer || 0) - (b.layer || 0));
-    for (const command of sortedBuffer) {
-        const layer = command.layer || 0; // an error should be raised probably...
-        const ctx = contexts[layer]
-        switch (command.type) {
-            case 'set':
-                ctx[command.name] = command.value;
-                break;
-            case 'rect':
-                drawRect(command, ctx, model);
-                break;
-            case 'clear':
-                clear(ctx);
-                break;
-            case 'patch':
-                drawPatch(command, ctx);
-                break;
-            case 'save':
-                console.log('[draw] save');
-                ctx.save();
-                break;
-            case 'restore':
-                console.log('[draw] restore');
-                ctx.restore();
-                break;
-            default:
-                console.log('[draw] Unknown command:', command);
-                break;
+    try {
+        const buffer = model.get("_buffer");
+        // Stable sort by layer (default 0)
+        const sortedBuffer = buffer.slice().sort((a, b) => (a.layer || 0) - (b.layer || 0));
+        //console.log('[draw] buffer length:', buffer.length);
+        for (const command of sortedBuffer) {
+            const layer = command.layer || 0;
+            const ctx = contexts[layer];
+            switch (command.type) {
+                case 'set':
+                    if (typeof ctx[command.name] === 'function') {
+                        ctx[command.name]();
+                        //console.log(`[set ${command.layer}]: called ${command.name}()`);
+                    } else {
+                        ctx[command.name] = command.value;
+                        //console.log(`[set ${command.layer}]: set ${command.name} =`, ctx[command.name]);
+                    }
+                    break;
+                case 'draw':
+                    switch (command.shape) {
+                        case 'rect':
+                            //console.log(`[draw rect ${command.layer}]`, command.count, ctx.fillStyle, ctx.lineWidth, ctx.strokeStyle);
+                            drawRect(command, ctx);
+                            break;
+                        default:
+                            c//onsole.log('[draw] Unknown shape:', command.shape);
+                            break;
+                    }
+                    break;
+                case 'clear':
+                    clear(ctx);
+                    //console.log(`[clear ${command.layer}]`);
+                    break;
+                case 'patch':
+                    drawPatch(command, ctx);
+                    //console.log(`[patch ${command.layer}]`, command.x, command.y, command.width, command.height);
+                    break;
+                case 'debug':
+                    //console.log(`[debug]`, command.value);
+                    break;
+                default:
+                    console.log(`[unknown command ${command.layer}]`, command);
+                    break;
+            }
         }
+        // On success, clear any previous error
+        const ack = Date.now();
+        model.set("_buffer_ack", ack);
+        //console.log(`[ack ${ack}]`);
+        model.save_changes();
+    } catch (err) {
+        console.log("[canvas.js] draw error");
     }
-    model.set("_buffer", []);
-    model.save_changes();
 }
 
 // --- Main Render ---
@@ -324,7 +346,8 @@ function render({ model, el }) {
     model.on("change:height", () => {
         updateCanvas(model, canvases);
     });
-    model.on("change:_buffer", () => {
+    model.on("change:_buffer_syn", () => {
+        //console.log("[draw] buffer changed!");
         draw(model, contexts);
     });
     model.on("change:css_width change:css_height", () => {
@@ -332,10 +355,8 @@ function render({ model, el }) {
     });
 
     // Process any patches that were buffered
-    const buffer = model.get("_buffer");
-    if (buffer && buffer.length > 0) {
-        draw(model, contexts);
-    }
+    draw(model, contexts);
+    //console.log("[draw] initial draw complete!");
 
     // Return cleanup
     return () => {

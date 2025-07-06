@@ -90,6 +90,19 @@ class ImageAnnotated(Image):
         super().__init__(image=image, layers=3, **kwargs)
         self.observe(self._repaint_boxes, names="boxes")
         self.observe(self._repaint_selection, names="selection")
+
+        # set up colours for boxes
+        # TODO we might do this differently at some point...
+        with self.hold_repaint(layer=LAYER_SELECTION):
+            self.stroke_width = 10
+            self.stroke_color = "green"
+            self.fill_color = "transparent"
+
+        with self.hold_repaint(layer=LAYER_BOXES):
+            self.stroke_width = 10
+            self.stroke_color = "red"
+            self.fill_color = "transparent"
+
         self.boxes = boxes
         self.selection: Optional[BoxSelection] = None
         self._node_size = SELECT_NODE_SIZE
@@ -97,23 +110,15 @@ class ImageAnnotated(Image):
 
     def _repaint_boxes(self, _) -> None:
         with self.hold_repaint(layer=LAYER_BOXES):
-            self.stroke_width = 10
-            self.stroke_color = "red"
-            self.fill_color = "transparent"
-            if self.boxes is None or len(self.boxes) == 0:
-                self.clear(layer=LAYER_BOXES)
-                return
-            self.clear(layer=LAYER_BOXES)
-            self.draw_rect(self.boxes[:, :4], layer=LAYER_BOXES)
+            self.clear()
+            if self.boxes is not None and len(self.boxes) > 0:
+                self.draw_rect(self.boxes[:, :4])
 
     def _repaint_selection(self, _) -> None:
         with self.hold_repaint(layer=LAYER_SELECTION):
-            self.stroke_width = 10
-            self.stroke_color = "red"
-            self.fill_color = "transparent"
-            self.clear(layer=LAYER_SELECTION)
+            self.clear()
             if self.selection is not None:
-                self.draw_rect(self.selection.get_box()[None, :], layer=LAYER_SELECTION)
+                self.draw_rect(self.selection.get_box()[None, :])
 
     def _select_box(self, x: int, y: int) -> Optional[BoxSelection]:
         """Select a box and node based on mouse event coordinates, supporting node/corner/edge/inside selection.

@@ -7,6 +7,8 @@ import anywidget
 import traitlets
 import numpy as np
 
+import time
+
 
 class Canvas(anywidget.AnyWidget):
     """A multi-layer canvas widget that displays multiple image layers stacked on top of each other."""
@@ -29,6 +31,10 @@ class Canvas(anywidget.AnyWidget):
 
     # Buffered patches for when widget is not ready
     _buffer = traitlets.List([]).tag(sync=True)
+    # used by the front end to ack that the render was completed
+    _buffer_ack = traitlets.Int(0).tag(sync=True)
+    # used by the backend to notify that the buffer has been changed/flushed
+    _buffer_syn = traitlets.Int(0).tag(sync=True)
     # used to buffer patches when hold is on
     _buffer_hold = traitlets.List([]).tag(sync=False)
 
@@ -71,11 +77,9 @@ class Canvas(anywidget.AnyWidget):
 
     @stroke_width.setter
     def stroke_width(self, value: int) -> None:
-        buffer = list(self._buffer)
-        buffer.append(
+        self.add_draw_command(
             {"type": "set", "name": "lineWidth", "value": value, "layer": self._layer}
         )
-        self._buffer = buffer
 
     @property
     def stroke_color(self) -> str:
@@ -84,11 +88,9 @@ class Canvas(anywidget.AnyWidget):
 
     @stroke_color.setter
     def stroke_color(self, value: str) -> None:
-        buffer = list(self._buffer)
-        buffer.append(
+        self.add_draw_command(
             {"type": "set", "name": "strokeStyle", "value": value, "layer": self._layer}
         )
-        self._buffer = buffer
 
     @property
     def fill_color(self) -> str:
@@ -97,11 +99,9 @@ class Canvas(anywidget.AnyWidget):
 
     @fill_color.setter
     def fill_color(self, value: str) -> None:
-        buffer = list(self._buffer)
-        buffer.append(
+        self.add_draw_command(
             {"type": "set", "name": "fillStyle", "value": value, "layer": self._layer}
         )
-        self._buffer = buffer
 
     def __init__(
         self,
@@ -127,14 +127,38 @@ class Canvas(anywidget.AnyWidget):
         self._hold = 0
         self._layer = 0
 
-    def repaint(self) -> None:
+    def _flush_buffer(self):
+        """Flushes the currently draw command buffer for rendering in the front end.
+
+        The draw will only happen (buffer flushed) if:
+            - a batch draw hold is not currently active
+            - the draw command buffer is not empty
+        """
+        if not self._hold and not self._buffer and self._buffer_hold:
+            buffer_hold = self._buffer_hold
+            self._buffer_hold = []
+            self._buffer = buffer_hold  # + [{"type": "debug", "value": nonce}]
+            self._buffer_syn = self._buffer_syn + 1  # trigger render
+
+    def add_draw_command(self, command):
+        """Add a draw command to the the command buffer.
+
+        The command will be immediate if there is not batch draw hold active.
+
+        Args:
+            command (dict[str,Any]): The draw command.
+        """
+        self._buffer_hold.append(command)
+        self._flush_buffer()
+
+    @traitlets.observe("_buffer_ack")
+    def _on_render_complete(self, _):
+        self._buffer.clear()
+        self._flush_buffer()
+
+    def redraw(self) -> None:
         """Manually triggered a repaint of the canvas."""
-        if self._hold > 0:
-            pass  # wait until the hold is released the repaint will be triggered then
-        else:
-            buffer = list(self._buffer)
-            self._buffer = []  # clear and reset the buffer to trigger the change
-            self._buffer = buffer
+        self._flush_buffer()  # will only flush if no hold repaint is active.
 
     def set_image(
         self, image_data: Optional[bytes | np.ndarray], layer: Optional[int] = None
@@ -149,7 +173,7 @@ class Canvas(anywidget.AnyWidget):
         if image_data is None:
             return self.clear(layer)
         else:
-            self.set_patch(0, 0, self.width, self.height, image_data, layer)
+            return self.set_patch(0, 0, self.width, self.height, image_data, layer)
 
     def set_patch(
         self,
@@ -180,44 +204,12 @@ class Canvas(anywidget.AnyWidget):
             "data": data,
             "layer": layer,
         }
-
-        if self._hold > 0:
-            self._buffer_hold.append(patch_dict)
-        else:
-            buffer = list(self._buffer)
-            buffer.append(patch_dict)
-            self._buffer = buffer
-
-    @contextmanager
-    def hold_repaint(self, layer: Optional[int] = None):
-        old_layer = self._layer
-        # the layer is set here, any draw calls used while this context manager is active
-        # will use this layer - unless it is explicitly override in the call.
-        # the layer will be restored when the context manager exits.
-        # it is safe to nest hold_repaint.
-        # if the layer was not specified, use the original layer
-        layer = layer if layer is not None else old_layer
-        self._layer = layer
-        self._hold += 1
-        try:
-            yield self
-        finally:
-            self._layer = old_layer
-            self._hold -= 1
-            if self._hold == 0:
-                self._buffer = self._buffer + self._buffer_hold
-                self._buffer_hold = []
-
-    def __repr__(self):
-        return f"MultiCanvas(width={self.width}, height={self.height}, layers={self.layers})"
-
-    def __str__(self):
-        return self.__repr__()
+        self.add_draw_command(patch_dict)
 
     def draw_rect(
         self,
         xyxy: tuple[int, int, int, int] | np.ndarray,
-        layer: int = 0,
+        layer: Optional[int] = None,
     ) -> None:
         """Draw one or more rectangles on the specified layer using current style traits.
 
@@ -237,6 +229,7 @@ class Canvas(anywidget.AnyWidget):
         Raises:
             ValueError: If any coordinate is not an integer type.
         """
+        layer = layer if layer is not None else self._layer
         if isinstance(xyxy, tuple):
             arr = np.array([xyxy], dtype=np.uint32)
         else:
@@ -246,19 +239,15 @@ class Canvas(anywidget.AnyWidget):
         if not np.issubdtype(arr.dtype, np.integer):
             raise ValueError("All rectangle coordinates must be integer type.")
         rect_patch = {
-            "type": "rect",
-            "rects": arr.tobytes(),
+            "type": "draw",
+            "shape": "rect",
+            "data": arr.tobytes(),
             "count": arr.shape[0],
             "layer": layer,
         }
-        if self._hold > 0:
-            self._buffer_hold.append(rect_patch)
-        else:
-            buffer = list(self._buffer)
-            buffer.append(rect_patch)
-            self._buffer = buffer
+        self.add_draw_command(rect_patch)
 
-    def clear(self, layer: int = 0) -> None:
+    def clear(self, layer: Optional[int] = None) -> None:
         """Clear the canvas at the specified layer.
 
         Args:
@@ -266,20 +255,45 @@ class Canvas(anywidget.AnyWidget):
         Returns:
             None: This method does not return a value.
         """
-        if layer >= self.layers:
-            raise IndexError(
-                f"{layer} is out of range Canvas has {self.layers} layers."
-            )
+
+        def clear_commands(buffer: list, layer: int):
+            for c in buffer:
+                if c["layer"] != layer or c["type"] in ["set"]:
+                    yield c
+
+        layer = layer if layer is not None else self._layer
         clear_patch = {
             "type": "clear",
             "layer": layer,
         }
-        if self._hold > 0:
-            self._buffer_hold.append(clear_patch)
-        else:
-            buffer = list(self._buffer)
-            buffer.append(clear_patch)
-            self._buffer = buffer
+        # we could remove all previous draw commands for the layer... TODO
+        self.add_draw_command(clear_patch)
+
+    @contextmanager
+    def hold_repaint(self, layer: Optional[int] = None):
+        old_layer = self._layer
+        # the layer is set here, any draw calls used while this context manager is active
+        # will use this layer - unless it is explicitly override in the call.
+        # the layer will be restored when the context manager exits.
+        # it is safe to nest hold_repaint.
+        # if the layer was not specified, use the original layer
+        layer = layer if layer is not None else old_layer
+        self._layer = layer
+        self._hold += 1
+        try:
+            yield self
+        finally:
+            self._layer = old_layer
+            self._hold -= 1
+            if not self._hold:
+                self._flush_buffer()
+        assert self._hold >= 0  # sanity check
+
+    def __repr__(self):
+        return f"MultiCanvas(width={self.width}, height={self.height}, layers={self.layers})"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 @staticmethod
