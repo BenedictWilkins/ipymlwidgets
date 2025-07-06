@@ -1,9 +1,11 @@
-import anywidget
-import traitlets
-import numpy as np
 from typing import Optional, Any
 from contextlib import contextmanager
 import pathlib
+import functools
+
+import anywidget
+import traitlets
+import numpy as np
 
 
 class Canvas(anywidget.AnyWidget):
@@ -70,7 +72,9 @@ class Canvas(anywidget.AnyWidget):
     @stroke_width.setter
     def stroke_width(self, value: int) -> None:
         buffer = list(self._buffer)
-        buffer.append({"type": "set", "name": "lineWidth", "value": value})
+        buffer.append(
+            {"type": "set", "name": "lineWidth", "value": value, "layer": self._layer}
+        )
         self._buffer = buffer
 
     @property
@@ -81,7 +85,9 @@ class Canvas(anywidget.AnyWidget):
     @stroke_color.setter
     def stroke_color(self, value: str) -> None:
         buffer = list(self._buffer)
-        buffer.append({"type": "set", "name": "strokeStyle", "value": value})
+        buffer.append(
+            {"type": "set", "name": "strokeStyle", "value": value, "layer": self._layer}
+        )
         self._buffer = buffer
 
     @property
@@ -92,7 +98,9 @@ class Canvas(anywidget.AnyWidget):
     @fill_color.setter
     def fill_color(self, value: str) -> None:
         buffer = list(self._buffer)
-        buffer.append({"type": "set", "name": "fillStyle", "value": value})
+        buffer.append(
+            {"type": "set", "name": "fillStyle", "value": value, "layer": self._layer}
+        )
         self._buffer = buffer
 
     def __init__(
@@ -117,6 +125,7 @@ class Canvas(anywidget.AnyWidget):
             **kwargs,
         )
         self._hold = 0
+        self._layer = 0
 
     def repaint(self) -> None:
         """Manually triggered a repaint of the canvas."""
@@ -128,7 +137,7 @@ class Canvas(anywidget.AnyWidget):
             self._buffer = buffer
 
     def set_image(
-        self, image_data: Optional[bytes | np.ndarray], layer: int = 0
+        self, image_data: Optional[bytes | np.ndarray], layer: Optional[int] = None
     ) -> None:
         """Set the entire image data for a specific layer using a full-size patch.
 
@@ -136,15 +145,9 @@ class Canvas(anywidget.AnyWidget):
             image_data (bytes | np.ndarray): Raw RGBA image data as bytes or numpy array.
             layer (int): Layer index to update. Defaults to 0.
         """
+        layer = layer if layer is not None else self._layer
         if image_data is None:
-            with self.hold_trait_notifications():
-                # Clear patches from the specified layer
-                self._buffer = [
-                    patch for patch in self._buffer if patch.get("layer") != layer
-                ]
-                self.width = 0
-                self.height = 0
-            return
+            return self.clear(layer)
         else:
             self.set_patch(0, 0, self.width, self.height, image_data, layer)
 
@@ -155,7 +158,7 @@ class Canvas(anywidget.AnyWidget):
         width: int,
         height: int,
         data: bytes | np.ndarray,
-        layer: int = 0,
+        layer: Optional[int] = None,
     ) -> None:
         """Set image data at a specific location using a patch.
 
@@ -186,11 +189,20 @@ class Canvas(anywidget.AnyWidget):
             self._buffer = buffer
 
     @contextmanager
-    def hold_repaint(self):
+    def hold_repaint(self, layer: Optional[int] = None):
+        old_layer = self._layer
+        # the layer is set here, any draw calls used while this context manager is active
+        # will use this layer - unless it is explicitly override in the call.
+        # the layer will be restored when the context manager exits.
+        # it is safe to nest hold_repaint.
+        # if the layer was not specified, use the original layer
+        layer = layer if layer is not None else old_layer
+        self._layer = layer
         self._hold += 1
         try:
             yield self
         finally:
+            self._layer = old_layer
             self._hold -= 1
             if self._hold == 0:
                 self._buffer = self._buffer + self._buffer_hold
@@ -268,6 +280,22 @@ class Canvas(anywidget.AnyWidget):
             buffer = list(self._buffer)
             buffer.append(clear_patch)
             self._buffer = buffer
+
+
+@staticmethod
+def hold_repaint(func):
+    """Decorator to hold repaint operations."""
+
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if not isinstance(self, Canvas):
+            raise ValueError(
+                "`hold_repaint` can only be used as a decorator on `Canvas` methods"
+            )
+        with self.hold_repaint():
+            return func(self, *args, **kwargs)
+
+    return wrapper
 
 
 def asbytes(image_data: Any, width: int, height: int) -> bytes:

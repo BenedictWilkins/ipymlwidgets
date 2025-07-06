@@ -12,7 +12,7 @@ from ipymlwidgets.traits.tensor import (
 class Image(Canvas):
     """A canvas widget that displays image data with CSS layout controls."""
 
-    # Backing image field - not synced, uses Tensor trait
+    # Backing image field - not synced
     image = TTensor(allow_none=True).tag(sync=False)
 
     def __init__(
@@ -40,14 +40,16 @@ class Image(Canvas):
         self.observe(self._repaint_image, names=["image"])
         self.image = image
 
-    def _to_numpy_image(self, tensor: Optional[SupportedTensor]) -> Optional[bytes]:
+    def _to_numpy_image(
+        self, tensor: Optional[SupportedTensor]
+    ) -> Optional[np.ndarray]:
         """Convert image array to bytes and update synced fields.
 
         Args:
             tensor (SupportedTensor): Image tensor to convert.
 
         Returns:
-            Optional[bytes]: Converted image data as bytes or None if tensor is None.
+            Optional[np.ndarray]: Converted image data as numpy array or None if tensor is None.
         """
         if tensor is None:
             return None

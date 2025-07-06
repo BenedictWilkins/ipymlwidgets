@@ -144,31 +144,22 @@ function drawRect(data, ctx, model) {
     } else if (rects instanceof DataView) {
         buffer = rects.buffer;
     } else {
-        console.log('[draw] rects is not ArrayBuffer or DataView:', rects);
+        //console.log('[draw] rects is not ArrayBuffer or DataView:', rects);
         return;
     }
     const intArr = new Int32Array(buffer);
-    console.log('[draw] Decoded intArr:', intArr, 'count:', count);
-    const strokeWidth = model.get("stroke_width");
-    const strokeColor = model.get("stroke_color");
-    const fillColor = model.get("fill_color");
-    ctx.strokeStyle = strokeColor || 'red';
-    ctx.lineWidth = strokeWidth || 1;
-    if (fillColor && fillColor !== "") {
-        ctx.fillStyle = fillColor;
-    }
+    //console.log('[draw] Decoded intArr:', intArr, 'count:', count);
+    //console.log('[draw] ctx:', ctx.fillStyle, ctx.lineWidth, ctx.strokeStyle);
     for (let i = 0; i < count; ++i) {
         const baseIdx = i * 4;
         const x0 = intArr[baseIdx];
         const y0 = intArr[baseIdx + 1];
         const x1 = intArr[baseIdx + 2];
         const y1 = intArr[baseIdx + 3];
-        console.log(`[draw] Drawing rect #${i}:`, { x0, y0, x1, y1 });
+        //console.log(`[draw] Drawing rect #${i}:`, { x0, y0, x1, y1 });
         ctx.beginPath();
         ctx.rect(x0, y0, x1 - x0, y1 - y0);
-        if (fillColor && fillColor !== "") {
-            ctx.fill();
-        }
+        ctx.fill();
         ctx.stroke();
     }
 }
@@ -254,8 +245,8 @@ function draw(model, contexts) {
     // Stable sort by layer (default 0)
     const sortedBuffer = buffer.slice().sort((a, b) => (a.layer || 0) - (b.layer || 0));
     for (const command of sortedBuffer) {
-        const layer = command.layer || 0;
-        const ctx = contexts[layer] || contexts[0];
+        const layer = command.layer || 0; // an error should be raised probably...
+        const ctx = contexts[layer]
         switch (command.type) {
             case 'set':
                 ctx[command.name] = command.value;
@@ -270,9 +261,11 @@ function draw(model, contexts) {
                 drawPatch(command, ctx);
                 break;
             case 'save':
+                console.log('[draw] save');
                 ctx.save();
                 break;
             case 'restore':
+                console.log('[draw] restore');
                 ctx.restore();
                 break;
             default:

@@ -1,12 +1,17 @@
-from typing import Optional, Any
+from typing import Optional, Tuple
+import pathlib
 import numpy as np
+import anywidget
 
-from ipymlwidgets.widgets.image import Image
-from ipymlwidgets.traits.tensor import (
+
+from ipymlwidgets.widgets import BoxWidget
+from ipymlwidgets.widgets import Image, hold_repaint
+from ipymlwidgets.traits import (
     Tensor as TTensor,
     SupportedTensor,
 )
-from traitlets import Instance, observe
+
+from traitlets import Instance, observe, Tuple as TTuple, Int as TInt
 
 LAYER_IMAGE = 0
 LAYER_BOXES = 1
@@ -45,12 +50,26 @@ class BoxSelection:
     """Represents a selected box and node for interaction."""
 
     def __init__(self, box: np.ndarray, node: int, index: int):
-        self.box = box  # shape (4,)
+        self._box = box.astype(np.int32)
+        # update this to change the box using drag, use get_box to get the final box.
+        self.box_offset = np.array([0, 0, 0, 0], dtype=np.int32)
         self.node = node
         self.index = index
 
     def __repr__(self):
-        return f"BoxSelection(box={self.box.tolist()}@{self.index} node={self.node})"
+        return (
+            f"BoxSelection(box={self.get_box().tolist()}@{self.index} node={self.node})"
+        )
+
+    def get_box(self, dtype: np.dtype = np.uint32) -> np.ndarray:
+        """Get the box in xyxy format."""
+        _box = self._box + self.box_offset
+        box = np.empty_like(_box, dtype=dtype)
+        box[0] = min(_box[0], _box[2])
+        box[1] = min(_box[1], _box[3])
+        box[2] = max(_box[0], _box[2])
+        box[3] = max(_box[1], _box[3])
+        return box
 
 
 class ImageAnnotated(Image):
@@ -58,6 +77,9 @@ class ImageAnnotated(Image):
 
     boxes = TTensor(convert_to="np", allow_none=True).tag(sync=False)
     selection = Instance(BoxSelection, allow_none=True).tag(sync=False)
+
+    # updated when the selection box changes, is always in xyxy format
+    _box_selection = TTuple(allow_none=True).tag(sync=False)
 
     def __init__(
         self,
@@ -71,10 +93,13 @@ class ImageAnnotated(Image):
         self.boxes = boxes
         self.selection: Optional[BoxSelection] = None
         self._node_size = SELECT_NODE_SIZE
-        self._was_dragging = False
+        self._dragging = False
 
     def _repaint_boxes(self, _) -> None:
-        with self.hold_repaint():
+        with self.hold_repaint(layer=LAYER_BOXES):
+            self.stroke_width = 10
+            self.stroke_color = "red"
+            self.fill_color = "transparent"
             if self.boxes is None or len(self.boxes) == 0:
                 self.clear(layer=LAYER_BOXES)
                 return
@@ -82,13 +107,16 @@ class ImageAnnotated(Image):
             self.draw_rect(self.boxes[:, :4], layer=LAYER_BOXES)
 
     def _repaint_selection(self, _) -> None:
-        with self.hold_repaint():
+        with self.hold_repaint(layer=LAYER_SELECTION):
+            self.stroke_width = 10
+            self.stroke_color = "red"
+            self.fill_color = "transparent"
             self.clear(layer=LAYER_SELECTION)
             if self.selection is not None:
-                self.draw_rect(self.selection.box[:4][None, :], layer=LAYER_SELECTION)
+                self.draw_rect(self.selection.get_box()[None, :], layer=LAYER_SELECTION)
 
     def _select_box(self, x: int, y: int) -> Optional[BoxSelection]:
-        """Select a box and node based on mouse event coordinates, supporting node/corner/edge/inside selection (like box_overlay.py).
+        """Select a box and node based on mouse event coordinates, supporting node/corner/edge/inside selection.
 
         Args:
             x (int): X coordinate of the mouse event.
@@ -129,52 +157,52 @@ class ImageAnnotated(Image):
         if select_corner.any():
             corner, selected = np.nonzero(select_corner)
             corner, selected = corner[-1].item(), selected[-1].item()
-            return BoxSelection(self.boxes[selected].copy(), 5 + corner, selected)
+            return BoxSelection(self.boxes[selected], 5 + corner, selected)
         # edge selection takes priority over inside selection
         edge = np.stack([left_sel, right_sel, top_sel, bottom_sel])
         select_edge = edge & select_inside[np.newaxis, :]
         if select_edge.any():
             edge, selected = np.nonzero(select_edge)
             edge, selected = edge[-1].item() + 1, selected[-1].item()
-            return BoxSelection(self.boxes[selected].copy(), edge, selected)
+            return BoxSelection(self.boxes[selected], edge, selected)
         selected = np.nonzero(select_inside)[0][-1].item()
-        return BoxSelection(self.boxes[selected].copy(), BOX_NODE_INSIDE, selected)
+        return BoxSelection(self.boxes[selected], BOX_NODE_INSIDE, selected)
 
     def _drag_selection(
         self, x: int, y: int, x_start: int, y_start: int
     ) -> BoxSelection:
+        """Drag the selected box to a new position or update its size."""
         dx = int(x - x_start)
         dy = int(y - y_start)
-        # select the box and update its position
-        box = self.boxes[self.selection.index, :].copy()
+        self.selection.box_offset[:] = 0
+        offset = self.selection.box_offset
         if self.selection.node == BOX_NODE_INSIDE:
             # drag the entire box around
-            box[:4] += np.array([dx, dy, dx, dy], dtype=box.dtype)
+            offset += np.array([dx, dy, dx, dy], dtype=offset.dtype)
         elif self.selection.node in BOX_NODE_EDGE:
             if self.selection.node == BOX_NODE_LEFT:
-                box[0] += dx
+                offset[0] += dx
             elif self.selection.node == BOX_NODE_RIGHT:
-                box[2] += dx
+                offset[2] += dx
             elif self.selection.node == BOX_NODE_TOP:
-                box[1] += dy
+                offset[1] += dy
             elif self.selection.node == BOX_NODE_BOTTOM:
-                box[3] += dy
+                offset[3] += dy
         elif self.selection.node in BOX_NODE_CORNER:
             if self.selection.node == BOX_NODE_TOP_LEFT:
-                box[0] += dx
-                box[1] += dy
+                offset[0] += dx
+                offset[1] += dy
             elif self.selection.node == BOX_NODE_TOP_RIGHT:
-                box[2] += dx
-                box[1] += dy
+                offset[2] += dx
+                offset[1] += dy
             elif self.selection.node == BOX_NODE_BOTTOM_RIGHT:
-                box[2] += dx
-                box[3] += dy
+                offset[2] += dx
+                offset[3] += dy
             elif self.selection.node == BOX_NODE_BOTTOM_LEFT:
-                box[0] += dx
-                box[3] += dy
+                offset[0] += dx
+                offset[3] += dy
         else:
             raise ValueError(f"Invalid box node: {self.selection.node}")
-        self.selection.box = box
         return self.selection
 
     @observe("mouse_down")
@@ -184,42 +212,70 @@ class ImageAnnotated(Image):
         # repaint happens automatically
         self.selection = self._select_box(event["x"], event["y"])
 
-    @observe("mouse_drag")
-    def _on_mouse_drag(self, event: dict) -> None:
-        """Handle drag event for moving/resizing boxes."""
-        event = event["new"]
-        if self.selection is not None:
-            self._drag_selection(
-                event["x"], event["y"], event["x_start"], event["y_start"]
-            )
-            # manual because internal mutation of self.selection
-            self._repaint_selection(None)
-            self._was_dragging = True
-            # # Update the box in the boxes array
-            # self.boxes[self.selection.index, :4] = self.selection.box[:4]
-            # self.selection = None
-            # self._repaint_boxes(None)
-
-    def normalize_box(self, box: np.ndarray) -> np.ndarray:
-        box = box.copy()
-        box[0] = min(box[0], box[2])
-        box[1] = min(box[1], box[3])
-        box[2] = max(box[0], box[2])
-        box[3] = max(box[1], box[3])
-        return box
-
     @observe("mouse_up")
     def _on_mouse_up(self, event: dict) -> None:
         """Handle mouse up event for box selection."""
-        event = event["new"]
-        if self._was_dragging:
-            self._was_dragging = False
-            with self.hold_repaint():
-                box = self.normalize_box(self.selection.box)
-                self.boxes[self.selection.index, :] = box
-                self.selection = None
-                self._repaint_boxes(None)
+        if self._dragging:
+            self._drag_end(event)
+            self._dragging = False
 
-        # self.selection = None
-        # self._repaint_boxes(None)
-        # self._repaint_selection()
+    @observe("mouse_drag")
+    def _on_mouse_drag(self, event: dict) -> None:
+        """Handle drag event for moving/resizing boxes."""
+        if self._dragging:
+            self._drag_continue(event)
+        else:
+            self._drag_start(event)
+            self._dragging = True
+
+    @hold_repaint
+    def _drag_end(self, _: dict) -> None:
+        box = self.selection.get_box()  # get xyxy box
+        if self.selection.index >= 0:
+            self.boxes[self.selection.index, :] = box
+            self.boxes = self.boxes.copy()  # trigger change notification
+        else:
+            self.boxes = np.concatenate([self.boxes, box[None, :]], axis=0)
+
+    @hold_repaint
+    def _drag_start(self, event: dict) -> None:
+        if self.selection is None:
+            # start a new box!
+            e = event["new"]
+            xyxy = np.array(
+                [e["x_start"], e["y_start"], e["x_start"], e["y_start"]],
+                dtype=np.int32,
+            )
+            self.selection = BoxSelection(
+                box=xyxy,
+                node=BOX_NODE_BOTTOM_RIGHT,
+                index=-1,  # negative index indicates that it is a new box
+            )
+        self._drag_continue(event)
+
+    @hold_repaint
+    def _drag_continue(self, event: dict) -> None:
+        """Continue the drag of an already selected box."""
+        event = event["new"]
+        # this should have been set already on mouse down
+        if self.selection is None:
+            # something weird happened cancel the drag
+            # TODO warning?
+            self._dragging = False
+            return
+
+        # continue the drag
+        self._drag_selection(event["x"], event["y"], event["x_start"], event["y_start"])
+        # manual because internal mutation of self.selection
+        self._repaint_selection(None)
+
+    def crop(self) -> list[np.ndarray]:
+        """Crop out each box from the image."""
+        boxes = self.boxes[:, :4]
+        boxes = boxes.clip(0, self.image.shape[1])
+        image = self._to_numpy_image(self.image)  # HWC
+        crops = []
+        for box in boxes:
+            crop = image[box[1] : box[3], box[0] : box[2]]
+            crops.append(crop)
+        return crops
