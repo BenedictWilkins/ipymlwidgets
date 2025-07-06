@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Optional, Any
+from traitlets import Tuple as TTuple
 
 from ipymlwidgets.widgets.canvas import Canvas
 from ipymlwidgets.traits.tensor import (
@@ -14,7 +15,7 @@ class Image(Canvas):
 
     # Backing image field - not synced
     image = TTensor(allow_none=True).tag(sync=False)
-
+    
     def __init__(
         self,
         image: Optional[SupportedTensor] = None,
@@ -33,8 +34,7 @@ class Image(Canvas):
             width, height = 8, 8  # Default size
         self._hold = False
         super().__init__(
-            width=width,
-            height=height,
+            size=(width, height),
             **kwargs,
         )
         self.observe(self._repaint_image, names=["image"])
@@ -76,8 +76,7 @@ class Image(Canvas):
             image = change["new"]
             with self.hold_trait_notifications():
                 image = self._to_numpy_image(image)  # HWC
-                self.width = image.shape[1]
-                self.height = image.shape[0]
+                self.size = (image.shape[1], image.shape[0])
                 self.set_image(image)
 
     def repaint(self) -> None:
@@ -86,7 +85,7 @@ class Image(Canvas):
 
     @property
     def shape(self) -> tuple[int, int, int]:
-        """Get the shape of the image.
+        """Get the shape of the image, see also `size`.
 
         Returns:
             tuple[int, int, int]: Shape of the image as (height, width, channels).

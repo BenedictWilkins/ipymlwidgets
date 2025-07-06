@@ -88,25 +88,37 @@ class ImageAnnotated(Image):
         **kwargs,
     ) -> None:
         super().__init__(image=image, layers=3, **kwargs)
-        self.observe(self._repaint_boxes, names="boxes")
-        self.observe(self._repaint_selection, names="selection")
-
         # set up colours for boxes
-        # TODO we might do this differently at some point...
         with self.hold_repaint(layer=LAYER_SELECTION):
-            self.stroke_width = 10
+            self.stroke_width = 2
             self.stroke_color = "green"
             self.fill_color = "transparent"
-
         with self.hold_repaint(layer=LAYER_BOXES):
-            self.stroke_width = 10
+            self.stroke_width = 2
             self.stroke_color = "red"
             self.fill_color = "transparent"
 
-        self.boxes = boxes
+        self.observe(self._repaint_boxes, names="boxes")
+        self.observe(self._repaint_selection, names="selection")
+
+        self.boxes = boxes if boxes is not None else np.array([], dtype=np.int32).reshape(0, 4)
         self.selection: Optional[BoxSelection] = None
         self._node_size = SELECT_NODE_SIZE
         self._dragging = False
+
+    @observe("client_size")
+    def _on_resize(self, _: dict) -> None:
+        """Update stroke width based on client size."""
+        width, height = self.client_size
+        print(f"client_size: {width}, {height}")
+        # Example: scale stroke width to be 1% of the smaller dimension, min 1, max 20
+        self._node_size = max(1, min(16, int(min(width, height) * 0.01)))
+        #self._node_size = 2
+        with self.hold_repaint(layer=LAYER_SELECTION):
+            self.stroke_width = self._node_size
+        with self.hold_repaint(layer=LAYER_BOXES):
+            self.stroke_width = self._node_size
+        print(f"stroke: {self._node_size}")
 
     def _repaint_boxes(self, _) -> None:
         with self.hold_repaint(layer=LAYER_BOXES):
@@ -132,31 +144,34 @@ class ImageAnnotated(Image):
         if self.boxes is None or len(self.boxes) == 0:
             return None
         boxes = self.boxes[:, :4]
+        print(boxes[0], x, y)
         left_diff = x - boxes[:, 0]  # [N,]
         right_diff = boxes[:, 2] - x  # [N,]
         top_diff = y - boxes[:, 1]  # [N,]
         bottom_diff = boxes[:, 3] - y  # [N,]
-        select_node_size = SELECT_NODE_SIZE
-        select_node_size2 = select_node_size / 2
+        select_node_size = self._node_size
+        print(left_diff, right_diff, top_diff, bottom_diff)
         # is the mouse inside any of the boxes (including the expanded edge)
         select_inside = (
-            (left_diff + select_node_size2 > 0)
-            & (right_diff + select_node_size2 > 0)
-            & (top_diff + select_node_size2 > 0)
-            & (bottom_diff + select_node_size2 > 0)
+            (left_diff > 0)
+            & (right_diff > 0)
+            & (top_diff > 0)
+            & (bottom_diff > 0)
         )
+        print("inside", select_inside)
         if not select_inside.any():
             return None  # no boxes are selected
-        left_sel = np.abs(left_diff) < select_node_size
-        right_sel = np.abs(right_diff) < select_node_size
-        top_sel = np.abs(top_diff) < select_node_size
-        bottom_sel = np.abs(bottom_diff) < select_node_size
+        left_sel = np.abs(left_diff) <= select_node_size
+        right_sel = np.abs(right_diff) <= select_node_size
+        top_sel = np.abs(top_diff) <= select_node_size
+        bottom_sel = np.abs(bottom_diff) <= select_node_size
+        print(left_sel, right_sel, top_sel, bottom_sel)
         select_top_left = left_sel & top_sel
         select_top_right = right_sel & top_sel
         select_bottom_right = right_sel & bottom_sel
         select_bottom_left = left_sel & bottom_sel
         select_corner = np.stack(
-            [select_top_left, select_top_right, select_bottom_right, select_bottom_left]
+            [select_top_left, select_top_right, select_bottom_left, select_bottom_right]
         )
         select_corner = select_corner & select_inside[np.newaxis, :]
         if select_corner.any():

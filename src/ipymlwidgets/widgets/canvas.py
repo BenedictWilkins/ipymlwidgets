@@ -14,8 +14,7 @@ class Canvas(anywidget.AnyWidget):
     """A multi-layer canvas widget that displays multiple image layers stacked on top of each other."""
 
     # Canvas dimensions (pixel data)
-    width = traitlets.Int(8).tag(sync=True)
-    height = traitlets.Int(8).tag(sync=True)
+    size = traitlets.Tuple(traitlets.Int(), traitlets.Int(), default_value=(8, 8)).tag(sync=True)
 
     # CSS layout properties
     css_width = traitlets.Unicode("auto").tag(sync=True)
@@ -105,27 +104,24 @@ class Canvas(anywidget.AnyWidget):
 
     def __init__(
         self,
-        width: int = 8,
-        height: int = 8,
+        size: tuple[int, int] = (8, 8),
         layers: int = 1,
         **kwargs,
     ) -> None:
         """Initialize the multi-layer canvas widget.
 
         Args:
-            width (int): Canvas width in pixels. Defaults to 8.
-            height (int): Canvas height in pixels. Defaults to 8.
+            size (tuple [int, int]): Canvas size in pixels. Defaults to (8, 8).
             layers (int): Number of canvas layers. Defaults to 1.
             **kwargs: Additional keyword arguments passed to parent.
         """
+        self._hold = 0
+        self._layer = 0
         super().__init__(
-            width=width,
-            height=height,
+            size=size,
             layers=layers,
             **kwargs,
         )
-        self._hold = 0
-        self._layer = 0
 
     def _flush_buffer(self):
         """Flushes the currently draw command buffer for rendering in the front end.
@@ -173,7 +169,7 @@ class Canvas(anywidget.AnyWidget):
         if image_data is None:
             return self.clear(layer)
         else:
-            return self.set_patch(0, 0, self.width, self.height, image_data, layer)
+            return self.set_patch(0, 0, self.size[0], self.size[1], image_data, layer)
 
     def set_patch(
         self,
@@ -194,7 +190,7 @@ class Canvas(anywidget.AnyWidget):
             data (bytes | np.ndarray): Raw RGBA image data for the patch.
             layer (int): Layer index to update. Defaults to 0.
         """
-        data = asbytes(data, width, height)
+        data = asbytes(data, (width, height))
         patch_dict = {
             "type": "patch",
             "x": x,
@@ -244,9 +240,23 @@ class Canvas(anywidget.AnyWidget):
             "data": arr.tobytes(),
             "count": arr.shape[0],
             "layer": layer,
+            "pixel_perfect": True,
         }
         self.add_draw_command(rect_patch)
 
+    def clear_rect(self, xyxy: tuple[int, int, int, int], layer: Optional[int] = None) -> None:
+        """Clear a rectangular area on the canvas.
+
+        Args:
+            xyxy (tuple[int, int, int, int]):
+                - Single rectangle: (x0, y0, x1, y1) coordinates.
+            layer (int): Layer index to clear. Defaults to 0.
+        """
+        layer = layer if layer is not None else self._layer
+        clear_patch = {"type": "clear", "xyxy": xyxy, "layer": layer}
+        self.add_draw_command(clear_patch)
+
+    
     def clear(self, layer: Optional[int] = None) -> None:
         """Clear the canvas at the specified layer.
 
@@ -254,13 +264,7 @@ class Canvas(anywidget.AnyWidget):
             layer (int): Layer index to clear. Defaults to 0.
         Returns:
             None: This method does not return a value.
-        """
-
-        def clear_commands(buffer: list, layer: int):
-            for c in buffer:
-                if c["layer"] != layer or c["type"] in ["set"]:
-                    yield c
-
+        """        
         layer = layer if layer is not None else self._layer
         clear_patch = {
             "type": "clear",
@@ -290,7 +294,7 @@ class Canvas(anywidget.AnyWidget):
         assert self._hold >= 0  # sanity check
 
     def __repr__(self):
-        return f"MultiCanvas(width={self.width}, height={self.height}, layers={self.layers})"
+        return f"MultiCanvas({self.size}, layers={self.layers})"
 
     def __str__(self):
         return self.__repr__()
@@ -312,13 +316,12 @@ def hold_repaint(func):
     return wrapper
 
 
-def asbytes(image_data: Any, width: int, height: int) -> bytes:
+def asbytes(image_data: Any, size: tuple[int, int]) -> bytes:
     """Convert image data to bytes format.
 
     Args:
         image_data (Any): Image data as numpy array or bytes.
-        width (int): Expected width of the image.
-        height (int): Expected height of the image.
+        size (tuple[int, int]): Expected size of the image.
 
     Returns:
         bytes: Image data as bytes.
@@ -327,15 +330,15 @@ def asbytes(image_data: Any, width: int, height: int) -> bytes:
         ValueError: If image_data is not the expected type or size.
     """
     if isinstance(image_data, np.ndarray):
-        if tuple(image_data.shape) != (height, width, 4):
+        if tuple(image_data.shape) != (size[1], size[0], 4):
             raise ValueError(
-                f"Argument: `image_data` expected shape [{height}, {width}, 4] got {list(image_data.shape)}"
+                f"Argument: `image_data` expected shape {size} got {list(image_data.shape)}"
             )
         return image_data.tobytes()
     elif isinstance(image_data, bytes):
-        if len(image_data) != height * width * 4:
+        if len(image_data) != size[0] * size[1] * 4:
             raise ValueError(
-                f"Argument: `image_data` expected {height * width * 4} bytes, got {len(image_data)}"
+                f"Argument: `image_data` expected {size[0] * size[1] * 4} bytes, got {len(image_data)}"
             )
         return image_data
     else:

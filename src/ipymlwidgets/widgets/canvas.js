@@ -16,8 +16,9 @@ function updateClientSize(model, wrapper) {
 }
 
 function updateCanvas(model, canvases) {
-    const width = model.get("width");
-    const height = model.get("height");
+    const size = model.get("size");
+    const width = size[0];
+    const height = size[1];
     for (let i = 0; i < canvases.length; i++) {
         const canvas = canvases[i];
         canvas.width = width;
@@ -131,11 +132,11 @@ function setupMouseEvents(model, wrapper, canvases) {
     };
 }
 
-function drawRect(command, ctx) {
+function drawRect(command, ctx, offCtx) {
     if (!command.data) return;
-    const { data, count } = command;
+    const { data, count, pixel_perfect } = command;
     if (!data || !count) {
-        console.log('[draw] No data or count');
+        //console.log('[draw] No data or count');
         return;
     }
     let buffer;
@@ -147,20 +148,80 @@ function drawRect(command, ctx) {
         //console.log('[draw] data is not ArrayBuffer or DataView:', data);
         return;
     }
+
     const intArr = new Int32Array(buffer);
-    //console.log('[draw] Decoded intArr:', intArr, 'count:', count);
-    //console.log('[draw] ctx:', ctx.fillStyle, ctx.lineWidth, ctx.strokeStyle);
-    for (let i = 0; i < count; ++i) {
-        const baseIdx = i * 4;
-        const x0 = intArr[baseIdx];
-        const y0 = intArr[baseIdx + 1];
-        const x1 = intArr[baseIdx + 2];
-        const y1 = intArr[baseIdx + 3];
-        //console.log(`[draw] Drawing rect #${i}:`, { x0, y0, x1, y1 });
-        ctx.beginPath();
-        ctx.rect(x0, y0, x1 - x0, y1 - y0);
-        ctx.fill();
-        ctx.stroke();
+
+    if (pixel_perfect) {
+        const border = ctx.lineWidth || 1;
+        const strokeStyle = ctx.strokeStyle;
+        const fillStyle = ctx.fillStyle;
+        const isTransparent = (
+            fillStyle === "transparent" ||
+            /^rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)$/.test(fillStyle)
+        );
+        // clear the offscreen canvas
+        offCtx.clearRect(0, 0, offCtx.canvas.width, offCtx.canvas.height);
+        for (let i = 0; i < count; ++i) {
+            const baseIdx = i * 4;
+            const x0 = intArr[baseIdx];
+            const y0 = intArr[baseIdx + 1];
+            const x1 = intArr[baseIdx + 2];
+            const y1 = intArr[baseIdx + 3];
+
+            // Inclusive: width/height is (x1-x0)+1, (y1-y0)+1
+            const w = x1 - x0;
+            const h = y1 - y0;
+
+            // Clear just the region at the top-left of the offscreen canvas
+            // offCtx.clearRect(0, 0, w, h);
+            offCtx.clearRect(0, 0, offCtx.canvas.width, offCtx.canvas.height);
+
+
+            // Draw border as filled rect using strokeStyle at (0, 0)
+            offCtx.fillStyle = strokeStyle;
+            offCtx.fillRect(0, 0, w, h);
+
+            // Clear the inner rect for transparency
+            if (w > 2 * border && h > 2 * border) {
+                offCtx.clearRect(
+                    border,
+                    border,
+                    w - 2 * border,
+                    h - 2 * border
+                );
+                // If fillStyle is not fully transparent, fill the inner rect
+                if (!isTransparent) {
+                    offCtx.fillStyle = fillStyle;
+                    offCtx.fillRect(
+                        border,
+                        border,
+                        w - 2 * border,
+                        h - 2 * border
+                    );
+                }
+            }
+            // Blit just the region for this rect from (0,0) to (x0,y0)
+            ctx.drawImage(
+                offCtx.canvas,
+                0, 0, w, h, // source rect
+                x0, y0, w, h  // destination rect
+            );
+        }
+    } else {
+        //console.log('[draw] Decoded intArr:', intArr, 'count:', count);
+        //console.log('[draw] ctx:', ctx.fillStyle, ctx.lineWidth, ctx.strokeStyle);
+        for (let i = 0; i < count; ++i) {
+            const baseIdx = i * 4;
+            const x0 = intArr[baseIdx];
+            const y0 = intArr[baseIdx + 1];
+            const x1 = intArr[baseIdx + 2];
+            const y1 = intArr[baseIdx + 3];
+            //console.log(`[draw] Drawing rect #${i}:`, { x0, y0, x1, y1 });
+            ctx.beginPath();
+            ctx.rect(x0, y0, x1 - x0, y1 - y0);
+            ctx.fill();
+            ctx.stroke();
+        }
     }
 }
 
@@ -183,9 +244,20 @@ function drawPatch(patchData, ctx) {
     }
 }
 
-function clear(ctx) {
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+function clear(data, ctx) {
+    const { xyxy } = data;
+    if (xyxy) {
+        const x0 = xyxy[0];
+        const y0 = xyxy[1];
+        const x1 = xyxy[2];
+        const y1 = xyxy[3];
+        ctx.clearRect(x0, y0, x1 - x0, y1 - y0);
+    } else {
+        //console.log('[clear]', data);
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
 }
+
 
 // --- Draw Command API ---
 //
@@ -243,13 +315,10 @@ function clear(ctx) {
 // All commands may include a 'layer' property to specify which canvas layer to use.
 // The buffer is expected to be ordered by layer, but this is not required for correctness.
 
-function draw(model, contexts) {
+function draw(buffer, contexts, offCtx) {
     try {
-        const buffer = model.get("_buffer");
-        // Stable sort by layer (default 0)
-        const sortedBuffer = buffer.slice().sort((a, b) => (a.layer || 0) - (b.layer || 0));
-        //console.log('[draw] buffer length:', buffer.length);
-        for (const command of sortedBuffer) {
+        while (buffer.length > 0) {
+            const command = buffer.shift();
             const layer = command.layer || 0;
             const ctx = contexts[layer];
             switch (command.type) {
@@ -266,7 +335,7 @@ function draw(model, contexts) {
                     switch (command.shape) {
                         case 'rect':
                             //console.log(`[draw rect ${command.layer}]`, command.count, ctx.fillStyle, ctx.lineWidth, ctx.strokeStyle);
-                            drawRect(command, ctx);
+                            drawRect(command, ctx, offCtx);
                             break;
                         default:
                             c//onsole.log('[draw] Unknown shape:', command.shape);
@@ -274,7 +343,7 @@ function draw(model, contexts) {
                     }
                     break;
                 case 'clear':
-                    clear(ctx);
+                    clear(command, ctx);
                     //console.log(`[clear ${command.layer}]`);
                     break;
                 case 'patch':
@@ -285,22 +354,21 @@ function draw(model, contexts) {
                     //console.log(`[debug]`, command.value);
                     break;
                 default:
-                    console.log(`[unknown command ${command.layer}]`, command);
+                    //console.log(`[unknown command ${command.layer}]`, command);
                     break;
             }
         }
-        // On success, clear any previous error
-        const ack = Date.now();
-        model.set("_buffer_ack", ack);
-        //console.log(`[ack ${ack}]`);
-        model.save_changes();
     } catch (err) {
-        console.log("[canvas.js] draw error");
+        //console.log("[canvas.js] draw error");
     }
 }
 
+
+
 // --- Main Render ---
 function render({ model, el }) {
+
+
     // Create inner wrapper for canvas positioning
     const wrapper = document.createElement("div");
     wrapper.classList.add("multicanvas-wrapper");
@@ -318,6 +386,11 @@ function render({ model, el }) {
         wrapper.appendChild(canvas);
     }
     el.appendChild(wrapper);
+
+
+    // offscreen canvas for blit drawing tricks
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
 
     // Initial render - just set up the canvas dimensions
     updateStyles(model, wrapper);
@@ -340,22 +413,41 @@ function render({ model, el }) {
     }
 
     // Listen for changes
-    model.on("change:width", () => {
+    model.on("change:size", () => {
         updateCanvas(model, canvases);
     });
-    model.on("change:height", () => {
-        updateCanvas(model, canvases);
-    });
+
+    const buffer = []; // queue for incoming draw commands
+    let scheduled = false;
+
+    function scheduleDraw() {
+        // grab any new commands from the backend buffer
+        const commands = model.get("_buffer");
+        buffer.push(...commands);
+        // schedule a new draw, if not already scheduled
+        if (!scheduled) {
+            scheduled = true;
+            requestAnimationFrame(() => {
+                //console.log("[draw]", buffer.length);
+                draw(buffer, contexts, offCtx);
+                scheduled = false;
+            });
+        }
+        // acknowledge commands were processed (scheduled for draw)
+        const ack = Date.now();
+        model.set("_buffer_ack", ack);
+        model.save_changes();
+    }
+
+
     model.on("change:_buffer_syn", () => {
-        //console.log("[draw] buffer changed!");
-        draw(model, contexts);
+        scheduleDraw();
     });
     model.on("change:css_width change:css_height", () => {
         updateStyles(model, wrapper);
     });
 
-    // Process any patches that were buffered
-    draw(model, contexts);
+    scheduleDraw(); // schedule an initial draw 
     //console.log("[draw] initial draw complete!");
 
     // Return cleanup
