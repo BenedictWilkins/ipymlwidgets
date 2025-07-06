@@ -23,7 +23,22 @@ BOX_NODE_TOP_RIGHT = 6
 BOX_NODE_BOTTOM_LEFT = 7
 BOX_NODE_BOTTOM_RIGHT = 8
 
-SELECT_NODE_SIZE = 8
+
+BOX_NODE_CORNER = (
+    BOX_NODE_TOP_LEFT,
+    BOX_NODE_TOP_RIGHT,
+    BOX_NODE_BOTTOM_RIGHT,
+    BOX_NODE_BOTTOM_LEFT,
+)
+
+BOX_NODE_EDGE = (
+    BOX_NODE_LEFT,
+    BOX_NODE_RIGHT,
+    BOX_NODE_TOP,
+    BOX_NODE_BOTTOM,
+)
+
+SELECT_NODE_SIZE = 1
 
 
 class BoxSelection:
@@ -52,32 +67,25 @@ class ImageAnnotated(Image):
     ) -> None:
         super().__init__(image=image, layers=3, **kwargs)
         self.observe(self._repaint_boxes, names="boxes")
+        self.observe(self._repaint_selection, names="selection")
         self.boxes = boxes
         self.selection: Optional[BoxSelection] = None
         self._node_size = SELECT_NODE_SIZE
+        self._was_dragging = False
 
     def _repaint_boxes(self, _) -> None:
         with self.hold_repaint():
             if self.boxes is None or len(self.boxes) == 0:
                 self.clear(layer=LAYER_BOXES)
-                self.clear(layer=LAYER_SELECTION)
                 return
             self.clear(layer=LAYER_BOXES)
             self.draw_rect(self.boxes[:, :4], layer=LAYER_BOXES)
-            self._repaint_selection()
 
-    def _repaint_selection(self) -> None:
+    def _repaint_selection(self, _) -> None:
         with self.hold_repaint():
             self.clear(layer=LAYER_SELECTION)
             if self.selection is not None:
                 self.draw_rect(self.selection.box[:4][None, :], layer=LAYER_SELECTION)
-
-    @observe("mouse_click")
-    def _on_click(self, event: dict) -> None:
-        event = event["new"]
-        """Handle mouse click event for box selection."""
-        self.selection = self._select_box(event["x"], event["y"])
-        self._repaint_selection()
 
     def _select_box(self, x: int, y: int) -> Optional[BoxSelection]:
         """Select a box and node based on mouse event coordinates, supporting node/corner/edge/inside selection (like box_overlay.py).
@@ -132,38 +140,86 @@ class ImageAnnotated(Image):
         selected = np.nonzero(select_inside)[0][-1].item()
         return BoxSelection(self.boxes[selected].copy(), BOX_NODE_INSIDE, selected)
 
-    # def _on_drag(self, event: dict) -> None:
-    #     """Handle drag event for moving/resizing boxes."""
-    #     if event.get("is_start", False):
-    #         self.selection = self._select_box(event, use_start=True)
-    #         self._repaint_selection()
-    #     elif event.get("is_end", False):
-    #         if self.selection is not None:
-    #             self._drag_selection(event)
-    #             # Update the box in the boxes array
-    #             self.boxes[self.selection.index, :4] = self.selection.box[:4]
-    #             self.selection = None
-    #             self._repaint_boxes(None)
-    #     else:
-    #         if self.selection is not None:
-    #             self._drag_selection(event)
-    #             self._repaint_selection()
+    def _drag_selection(
+        self, x: int, y: int, x_start: int, y_start: int
+    ) -> BoxSelection:
+        dx = int(x - x_start)
+        dy = int(y - y_start)
+        # select the box and update its position
+        box = self.boxes[self.selection.index, :].copy()
+        if self.selection.node == BOX_NODE_INSIDE:
+            # drag the entire box around
+            box[:4] += np.array([dx, dy, dx, dy], dtype=box.dtype)
+        elif self.selection.node in BOX_NODE_EDGE:
+            if self.selection.node == BOX_NODE_LEFT:
+                box[0] += dx
+            elif self.selection.node == BOX_NODE_RIGHT:
+                box[2] += dx
+            elif self.selection.node == BOX_NODE_TOP:
+                box[1] += dy
+            elif self.selection.node == BOX_NODE_BOTTOM:
+                box[3] += dy
+        elif self.selection.node in BOX_NODE_CORNER:
+            if self.selection.node == BOX_NODE_TOP_LEFT:
+                box[0] += dx
+                box[1] += dy
+            elif self.selection.node == BOX_NODE_TOP_RIGHT:
+                box[2] += dx
+                box[1] += dy
+            elif self.selection.node == BOX_NODE_BOTTOM_RIGHT:
+                box[2] += dx
+                box[3] += dy
+            elif self.selection.node == BOX_NODE_BOTTOM_LEFT:
+                box[0] += dx
+                box[3] += dy
+        else:
+            raise ValueError(f"Invalid box node: {self.selection.node}")
+        self.selection.box = box
+        return self.selection
 
-    # def _drag_selection(self, event: dict) -> None:
-    #     """Update the selected box during drag."""
-    #     if self.selection is None:
-    #         return
-    #     x = event["x"]
-    #     y = event["y"]
-    #     x_start = event.get("x_start", x)
-    #     y_start = event.get("y_start", y)
-    #     dx = int(x - x_start)
-    #     dy = int(y - y_start)
-    #     box = self.selection.box.copy()
-    #     # Only support moving the whole box for now
-    #     if self.selection.node == BOX_NODE_INSIDE:
-    #         box[0] += dx
-    #         box[1] += dy
-    #         box[2] += dx
-    #         box[3] += dy
-    #     self.selection.box = box
+    @observe("mouse_down")
+    def _on_mouse_down(self, event: dict) -> None:
+        """Handle mouse down event for box selection."""
+        event = event["new"]
+        # repaint happens automatically
+        self.selection = self._select_box(event["x"], event["y"])
+
+    @observe("mouse_drag")
+    def _on_mouse_drag(self, event: dict) -> None:
+        """Handle drag event for moving/resizing boxes."""
+        event = event["new"]
+        if self.selection is not None:
+            self._drag_selection(
+                event["x"], event["y"], event["x_start"], event["y_start"]
+            )
+            # manual because internal mutation of self.selection
+            self._repaint_selection(None)
+            self._was_dragging = True
+            # # Update the box in the boxes array
+            # self.boxes[self.selection.index, :4] = self.selection.box[:4]
+            # self.selection = None
+            # self._repaint_boxes(None)
+
+    def normalize_box(self, box: np.ndarray) -> np.ndarray:
+        box = box.copy()
+        box[0] = min(box[0], box[2])
+        box[1] = min(box[1], box[3])
+        box[2] = max(box[0], box[2])
+        box[3] = max(box[1], box[3])
+        return box
+
+    @observe("mouse_up")
+    def _on_mouse_up(self, event: dict) -> None:
+        """Handle mouse up event for box selection."""
+        event = event["new"]
+        if self._was_dragging:
+            self._was_dragging = False
+            with self.hold_repaint():
+                box = self.normalize_box(self.selection.box)
+                self.boxes[self.selection.index, :] = box
+                self.selection = None
+                self._repaint_boxes(None)
+
+        # self.selection = None
+        # self._repaint_boxes(None)
+        # self._repaint_selection()
