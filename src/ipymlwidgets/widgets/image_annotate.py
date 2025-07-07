@@ -85,11 +85,13 @@ class ImageAnnotated(Image):
         self,
         image: Optional[SupportedTensor] = None,
         boxes: Optional[SupportedTensor] = None,
+        client_node_size: int = 8, # pixels in the client for selection boxes
         **kwargs,
     ) -> None:
         self.boxes = boxes if boxes is not None else np.array([], dtype=np.int32).reshape(0, 4)
         self.selection: Optional[BoxSelection] = None
-        self._node_size = 1
+        self._client_node_size = client_node_size
+        self._node_size = 1 # initial value will be updated immediately on resize
         self._dragging = False
     
         super().__init__(image=image, layers=3, **kwargs)
@@ -114,8 +116,6 @@ class ImageAnnotated(Image):
         # # Example: scale stroke width to be 1% of the smaller dimension, min 1, max 20
         # self._node_size = max(1, min(12, int(min(width, height) * 0.05)))
         # #self._node_size = 2
-        NODE_SIZE = 12  # or whatever value you want for the client-side pixel size
-
         width, height = self.client_size
         w, h = self.size
 
@@ -126,7 +126,7 @@ class ImageAnnotated(Image):
         # Use the minimum scale to ensure the stroke is not too thick
         scale = min(scale_x, scale_y)
         # Set node size in canvas pixels so it appears as NODE_SIZE on the client
-        self._node_size = int(math.ceil(NODE_SIZE * scale))
+        self._node_size = int(math.ceil(self._client_node_size * scale))
         with self.hold_repaint(layer=LAYER_SELECTION):
             self.stroke_width = self._node_size
         with self.hold_repaint(layer=LAYER_BOXES):
@@ -159,13 +159,13 @@ class ImageAnnotated(Image):
         if self.boxes is None or len(self.boxes) == 0:
             return None
         boxes = self.boxes[:, :4]
-        print(boxes[0], x, y)
+        #print(boxes[0], x, y)
         left_diff = x - boxes[:, 0]  # [N,]
         right_diff = boxes[:, 2] - x  # [N,]
         top_diff = y - boxes[:, 1]  # [N,]
         bottom_diff = boxes[:, 3] - y  # [N,]
         select_node_size = self._node_size
-        print(left_diff, right_diff, top_diff, bottom_diff)
+        #print(left_diff, right_diff, top_diff, bottom_diff)
         # is the mouse inside any of the boxes (including the expanded edge)
         select_inside = (
             (left_diff >= 0)
@@ -173,14 +173,14 @@ class ImageAnnotated(Image):
             & (top_diff >= 0)
             & (bottom_diff >= 0)
         )
-        print("inside", select_inside)
+        #print("inside", select_inside)
         if not select_inside.any():
             return None  # no boxes are selected
         left_sel = np.abs(left_diff) <= select_node_size
         right_sel = np.abs(right_diff) <= select_node_size
         top_sel = np.abs(top_diff) <= select_node_size
         bottom_sel = np.abs(bottom_diff) <= select_node_size
-        print(left_sel, right_sel, top_sel, bottom_sel)
+        #print(left_sel, right_sel, top_sel, bottom_sel)
         select_top_left = left_sel & top_sel
         select_top_right = right_sel & top_sel
         select_bottom_right = right_sel & bottom_sel
