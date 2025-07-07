@@ -2,7 +2,7 @@ from typing import Optional, Tuple
 import pathlib
 import numpy as np
 import anywidget
-
+import math
 
 from ipymlwidgets.widgets import BoxWidget
 from ipymlwidgets.widgets import Image, hold_repaint
@@ -87,38 +87,53 @@ class ImageAnnotated(Image):
         boxes: Optional[SupportedTensor] = None,
         **kwargs,
     ) -> None:
+        self.boxes = boxes if boxes is not None else np.array([], dtype=np.int32).reshape(0, 4)
+        self.selection: Optional[BoxSelection] = None
+        self._node_size = 1
+        self._dragging = False
+    
         super().__init__(image=image, layers=3, **kwargs)
+        
         # set up colours for boxes
         with self.hold_repaint(layer=LAYER_SELECTION):
-            self.stroke_width = 2
             self.stroke_color = "green"
             self.fill_color = "transparent"
         with self.hold_repaint(layer=LAYER_BOXES):
-            self.stroke_width = 2
             self.stroke_color = "red"
             self.fill_color = "transparent"
 
         self.observe(self._repaint_boxes, names="boxes")
         self.observe(self._repaint_selection, names="selection")
-
-        self.boxes = boxes if boxes is not None else np.array([], dtype=np.int32).reshape(0, 4)
-        self.selection: Optional[BoxSelection] = None
-        self._node_size = SELECT_NODE_SIZE
-        self._dragging = False
-
-    @observe("client_size")
+       
+    @observe("client_size", "size")
     def _on_resize(self, _: dict) -> None:
         """Update stroke width based on client size."""
+        # width, height = self.client_size
+        # w, h = self.size
+        # # TODO
+        # # Example: scale stroke width to be 1% of the smaller dimension, min 1, max 20
+        # self._node_size = max(1, min(12, int(min(width, height) * 0.05)))
+        # #self._node_size = 2
+        NODE_SIZE = 12  # or whatever value you want for the client-side pixel size
+
         width, height = self.client_size
-        print(f"client_size: {width}, {height}")
-        # Example: scale stroke width to be 1% of the smaller dimension, min 1, max 20
-        self._node_size = max(1, min(12, int(min(width, height) * 0.05)))
-        #self._node_size = 2
+        w, h = self.size
+
+        # Compute scale factors for width and height
+        scale_x = w / width if width else 1
+        scale_y = h / height if height else 1
+
+        # Use the minimum scale to ensure the stroke is not too thick
+        scale = min(scale_x, scale_y)
+        # Set node size in canvas pixels so it appears as NODE_SIZE on the client
+        self._node_size = int(math.ceil(NODE_SIZE * scale))
         with self.hold_repaint(layer=LAYER_SELECTION):
             self.stroke_width = self._node_size
         with self.hold_repaint(layer=LAYER_BOXES):
             self.stroke_width = self._node_size
-        print(f"stroke: {self._node_size}")
+        
+        self._repaint_boxes(None)
+        self._repaint_selection(None)
 
     def _repaint_boxes(self, _) -> None:
         with self.hold_repaint(layer=LAYER_BOXES):
@@ -153,10 +168,10 @@ class ImageAnnotated(Image):
         print(left_diff, right_diff, top_diff, bottom_diff)
         # is the mouse inside any of the boxes (including the expanded edge)
         select_inside = (
-            (left_diff > 0)
-            & (right_diff > 0)
-            & (top_diff > 0)
-            & (bottom_diff > 0)
+            (left_diff >= 0)
+            & (right_diff >= 0)
+            & (top_diff >= 0)
+            & (bottom_diff >= 0)
         )
         print("inside", select_inside)
         if not select_inside.any():
