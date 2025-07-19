@@ -152,27 +152,28 @@ class TorchDependency(OptionalDependency):
         if tensor.ndim == 3:
             tensor = tensor.permute(1, 2, 0)
         elif tensor.ndim == 2:
-            tensor = tensor.unsqueeze(0)
+            tensor = tensor.unsqueeze(-1)
         else:
             raise ValueError(
-                f"Argument: `tensor` expected 2D or 3D tensor but got {tensor.ndim}D"
+                f"Argument: `tensor` expected 2D or 3D image tensor but got {tensor.ndim}D"
             )
-        if tensor.shape[0] == 1:
-            tensor = tensor.expand(4, -1, -1)  # RGBA
-        elif tensor.shape[0] == 3:
-            tensor = torch.cat([tensor, torch.ones_like(tensor[:1])], dim=0)
-        elif tensor.shape[0] == 4:
+        # tensor is now in HWC format
+        if tensor.shape[-1] == 1:
+            tensor = tensor.expand(-1, -1, 4)  # RGBA
+        elif tensor.shape[-1] == 3:
+            tensor = self.module.cat([tensor, self.module.ones_like(tensor[...,:1])], dim=-1)
+        elif tensor.shape[-1] == 4:
             pass  # already RGBA
         else:
             raise ValueError(
-                f"Argument: `tensor` expected 1, 3, or 4 channels but got {tensor.shape[0]}"
+                f"Argument: `tensor` expected 1, 3, or 4 channels but got {tensor.shape[-1]}"
             )
 
         if tensor.dtype.is_floating_point:
-            tensor = torch.clamp(tensor, 0.0, 1.0)
-            tensor = (tensor * 255).to(torch.uint8)
+            tensor = self.module.clamp(tensor, 0.0, 1.0)
+            tensor = (tensor * 255).to(self.module.uint8)
         else:
-            tensor = tensor.to(torch.uint8)
+            tensor = tensor.to(self.module.uint8)
         return self.to_numpy(tensor)
 
 
@@ -229,7 +230,7 @@ class TensorFlowDependency(OptionalDependency):
             return False
         return isinstance(obj, self.module.Tensor)
 
-    def to_numpy_image(self, tensor: NPTensor) -> np.ndarray:
+    def to_numpy_image(self, tensor: TFTensor) -> np.ndarray:
         raise NotImplementedError("COMING SOON")  # TODO
 
 

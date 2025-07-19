@@ -29,6 +29,7 @@ class Image(Canvas):
         """
         # Initialize width and height from image if provided
         if image is not None:
+            print(image.shape)
             height, width = image.shape[:2]
         else:
             width, height = 8, 8  # Default size
@@ -56,6 +57,7 @@ class Image(Canvas):
         image_trait: TTensor = self.traits()["image"]
         dependency: OptionalDependency = image_trait.get_dependency(self, tensor)
         array = dependency.to_numpy_image(tensor)
+        print(array.shape)
         assert array.ndim == 3
         assert array.shape[2] == 4  # HWC format RGBA
         assert array.dtype == np.uint8
