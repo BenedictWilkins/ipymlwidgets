@@ -1,7 +1,7 @@
-from .image import Image
-from .box_widget import BoxWidget
-from .canvas import Canvas, hold_repaint
-from .image_annotate import ImageAnnotated
-from .image_ocr import ImageOCR
+from .image import Image, ImageAnnotated
+from .canvas import Canvas
+from .container import Box
 
-__all__ = ["Canvas", "hold_repaint", "Image", "ImageAnnotated", "ImageOCR", "BoxWidget"]
+from ipywidgets import Text
+
+__all__ = ["Image", "ImageAnnotated", "Canvas", "Box", "Text"]

@@ -16,9 +16,9 @@ class Canvas(anywidget.AnyWidget):
     # Canvas dimensions (pixel data)
     size = traitlets.Tuple(traitlets.Int(), traitlets.Int(), default_value=(8, 8)).tag(sync=True)
 
-    # CSS layout properties
-    css_width = traitlets.Unicode("auto").tag(sync=True)
-    css_height = traitlets.Unicode("auto").tag(sync=True)
+    # # CSS layout properties
+    # css_width = traitlets.Unicode("100%").tag(sync=True)
+    # css_height = traitlets.Unicode("100%").tag(sync=True)
 
     # Client-side rendered size (actual display size)
     client_size = traitlets.Tuple(
@@ -46,25 +46,37 @@ class Canvas(anywidget.AnyWidget):
     mouse_leave = traitlets.Dict().tag(sync=True)
     mouse_enter = traitlets.Dict().tag(sync=True)
 
-    # Built-in anywidget CSS property
     _css = """
+    :host {
+        display: block;
+        width: 100%;
+        height: auto;
+        box-sizing: border-box;
+        position: relative;
+    }
+
+        
     .multicanvas-wrapper {
         display: grid;
         width: 100%;
-        height: 100%;
+        height: 100%; 
         max-width: 100%;
-        max-height: none;
+        max-height: 100%;
+        box-sizing: border-box;
     }
+
     .multicanvas-canvas {
         grid-area: 1 / 1;
+        image-rendering: pixelated;
+        background: transparent;
         width: 100%;
         height: 100%;
-        display: block;
-        image-rendering: pixelated;
-        border: 1px solid rgba(0,0,0,0.1);
-        background: transparent;
+        min-width: 0;
+        min-height: 0;
+        box-sizing: border-box;
+        object-fit: contain;  /* Ensures that the image maintains its aspect ratio */
     }
-    """
+"""
 
     # Javascript
     _esm = pathlib.Path(__file__).parent / "canvas.js"

@@ -28,29 +28,62 @@ function updateCanvas(model, canvases, offCanvas) {
     offCanvas.height = height;
 }
 
+
 // --- Mouse Event Handling ---
 function setupMouseEvents(model, wrapper, canvases) {
     let isMouseDown = false;
     let dragStartPos = null;
     let dragThreshold = 3; // pixels
 
+
     function getMouseData(event) {
+        // Get the container's bounding box
         const rect = wrapper.getBoundingClientRect();
+        const containerWidth = rect.width;
+        const containerHeight = rect.height;
+
+        // Get the client coordinates (relative to the container)
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
-        const canvasX = Math.floor((x / rect.width) * canvases[0].width);
-        const canvasY = Math.floor((y / rect.height) * canvases[0].height);
+
+        // Calculate the scaling factors for x and y based on the container size and canvas size
+        const scaleX = canvases[0].width / containerWidth;
+        const scaleY = canvases[0].height / containerHeight;
+
+        // Scale the client coordinates to match the canvas' internal coordinates
+        const canvasX = Math.floor(x * scaleX);
+        const canvasY = Math.floor(y * scaleY);
+
+        // Return the mouse data with both client and canvas coordinates
         return {
             x: canvasX,
             y: canvasY,
             x_client: x,
             y_client: y,
-            w_client: rect.width,
-            h_client: rect.height,
+            w_client: containerWidth,
+            h_client: containerHeight,
             w: canvases[0].width,
             h: canvases[0].height
         };
     }
+
+    // function getMouseData(event) {
+    //     const rect = wrapper.getBoundingClientRect();
+    //     const x = event.clientX - rect.left;
+    //     const y = event.clientY - rect.top;
+    //     const canvasX = Math.floor((x / rect.width) * canvases[0].width);
+    //     const canvasY = Math.floor((y / rect.height) * canvases[0].height);
+    //     return {
+    //         x: canvasX,
+    //         y: canvasY,
+    //         x_client: x,
+    //         y_client: y,
+    //         w_client: rect.width,
+    //         h_client: rect.height,
+    //         w: canvases[0].width,
+    //         h: canvases[0].height
+    //     };
+    // }
 
     function handleMouseDown(event) {
         isMouseDown = true;
@@ -58,6 +91,7 @@ function setupMouseEvents(model, wrapper, canvases) {
         dragStartPos = { x: mouseData.x, y: mouseData.y, clientX: event.clientX, clientY: event.clientY };
         model.set("mouse_down", mouseData);
         model.save_changes();
+        //console.log("mouse down", mouseData);
     }
 
     function handleMouseUp(event) {
@@ -68,6 +102,7 @@ function setupMouseEvents(model, wrapper, canvases) {
             const distance = Math.sqrt(dx * dx + dy * dy);
             if (distance < dragThreshold) {
                 model.set("mouse_click", mouseData);
+                //console.log("mouse click", mouseData);
                 model.save_changes();
             } else {
                 const dragData = {
@@ -88,6 +123,7 @@ function setupMouseEvents(model, wrapper, canvases) {
     function handleMouseMove(event) {
         const mouseData = getMouseData(event);
         model.set("mouse_move", mouseData);
+        //console.log("mouse move", mouseData);
         model.save_changes();
         if (isMouseDown && dragStartPos) {
             const dx = event.clientX - dragStartPos.clientX;
@@ -340,7 +376,7 @@ function draw(buffer, contexts, offCtx) {
                             drawRect(command, ctx, offCtx);
                             break;
                         default:
-                            c//onsole.log('[draw] Unknown shape:', command.shape);
+                            console.log('[draw] Unknown shape:', command.shape);
                             break;
                     }
                     break;
@@ -369,11 +405,10 @@ function draw(buffer, contexts, offCtx) {
 
 // --- Main Render ---
 function render({ model, el }) {
-
-
     // Create inner wrapper for canvas positioning
     const wrapper = document.createElement("div");
     wrapper.classList.add("multicanvas-wrapper");
+
     // Array to hold all canvas elements and contexts
     const canvases = [];
     const contexts = [];
@@ -445,9 +480,9 @@ function render({ model, el }) {
     model.on("change:_buffer_syn", () => {
         scheduleDraw();
     });
-    model.on("change:css_width change:css_height", () => {
-        updateStyles(model, wrapper);
-    });
+    // model.on("change:css_width change:css_height", () => {
+    //     updateStyles(model, wrapper);
+    // });
 
     scheduleDraw(); // schedule an initial draw 
     //console.log("[draw] initial draw complete!");

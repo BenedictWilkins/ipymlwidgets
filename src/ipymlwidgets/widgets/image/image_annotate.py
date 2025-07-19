@@ -4,8 +4,9 @@ import numpy as np
 import anywidget
 import math
 
-from ipymlwidgets.widgets import BoxWidget
-from ipymlwidgets.widgets import Image, hold_repaint
+from ipymlwidgets.widgets.image import Image
+from ipymlwidgets.widgets.canvas import Canvas, hold_repaint
+
 from ipymlwidgets.traits import (
     Tensor as TTensor,
     SupportedTensor,
