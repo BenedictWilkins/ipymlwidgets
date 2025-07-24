@@ -59,7 +59,7 @@ class BoxSelection:
 
     def __repr__(self):
         return (
-            f"BoxSelection(box={self.get_box().tolist()}@{self.index} node={self.node})"
+            f"BoxSelection(box={self.get_box().tolist()}@{self.index} node={self.node}, index={self.index})"
         )
 
     def get_box(self, dtype: np.dtype = np.uint32) -> np.ndarray:
@@ -268,8 +268,9 @@ class ImageAnnotated(Image):
     def _drag_end(self, _: dict) -> None:
         box = self.selection.get_box()  # get xyxy box
         if self.selection.index >= 0:
-            self.boxes[self.selection.index, :] = box
-            self.boxes = self.boxes.copy()  # trigger change notification
+            _new = self.boxes.copy()  # trigger change notification
+            _new[self.selection.index, :] = box
+            self.boxes = _new
         else:
             self.boxes = np.concatenate([self.boxes, box[None, :]], axis=0)
 

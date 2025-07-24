@@ -92,3 +92,17 @@ class ItemOCR(anywidget.AnyWidget):
         self._text = W.Text(value=text, layout=W.Layout(width="100%", margin="0", padding="0", box_sizing="border-box", border="none"))
         super().__init__()        
         self.children = [self._image, self._text]
+
+    def set_image(self, image: SupportedTensor):
+        self._image.set_image(image)
+
+    def set_text(self, text: str):
+        self._text.value = text
+
+    def focus(self):
+        """Focus the text input."""
+        self._text.focus()
+
+    def unfocus(self):
+        """Unfocus the text input."""
+        self._text.unfocus()
