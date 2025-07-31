@@ -1,7 +1,7 @@
 import ipywidgets as W
 import anywidget
 import traitlets
-from typing import Optional
+from typing import Optional, Dict, List
 
 from ipymlwidgets.traits.layout import Layout
 
@@ -69,9 +69,15 @@ class Box(anywidget.AnyWidget):
     children = traitlets.List(trait=traitlets.Instance(W.DOMWidget)).tag(sync=True, **W.widget_serialization)
     layout = Layout().tag(sync=True)
 
-    def __init__(self, children: Optional[list[W.DOMWidget]] = None, layout: Optional[dict] = None):
+    def __init__(self, children: Optional[List[W.DOMWidget]] = None, layout: Optional[Dict[str,str]] = None):
+        """Initialize Box widget.
+        
+        Args:
+            children (list[W.DOMWidget], optional): List of child widgets. Defaults to None.
+            layout (dict, optional): CSS layout properties as a dictionary. Defaults to None.
+        """
         children = children if children is not None else []
-        layout = layout if layout is not None else {} 
+        layout = layout if layout is not None else {}
         super().__init__(children=children, layout=layout)
 
     def insert_child(self, widget, index : int = 0):
@@ -85,16 +91,6 @@ class Box(anywidget.AnyWidget):
     def remove_child(self, widget):
         self.children.remove(widget)
         self.send_state()
-
-    # def reorder(self, index : list[int]):
-    #     if len(index) != len(self.children):
-    #         raise ValueError(f"Invalid Argument: `index` expected to length {len(self.children)} but got {len(index)}")
-    #     self.children = [self.children[i] for i in index]
-    #     self.send_state()
-
-    # def reverse(self):
-    #     self.children = list(reversed(self.children))
-    #     self.send_state()
 
 
 

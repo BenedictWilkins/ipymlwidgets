@@ -5,7 +5,7 @@ import anywidget
 import math
 
 from ipymlwidgets.widgets.image import Image
-from ipymlwidgets.widgets.canvas import Canvas, hold_repaint
+from ipymlwidgets.widgets.canvas import hold_repaint, color_to_hex
 
 from ipymlwidgets.traits import (
     Tensor as TTensor,
@@ -50,7 +50,8 @@ SELECT_NODE_SIZE = 1
 class BoxSelection:
     """Represents a selected box and node for interaction."""
 
-    def __init__(self, box: np.ndarray, node: int, index: int):
+    def __init__(self, box: np.ndarray, node: int, index: int, clamp : tuple[int,int]):
+        self._clamp = clamp # size of the image
         self._box = box.astype(np.int32)
         # update this to change the box using drag, use get_box to get the final box.
         self.box_offset = np.array([0, 0, 0, 0], dtype=np.int32)
@@ -65,12 +66,12 @@ class BoxSelection:
     def get_box(self, dtype: np.dtype = np.uint32) -> np.ndarray:
         """Get the box in xyxy format."""
         _box = self._box + self.box_offset
-        box = np.empty_like(_box, dtype=dtype)
-        box[0] = min(_box[0], _box[2])
-        box[1] = min(_box[1], _box[3])
-        box[2] = max(_box[0], _box[2])
-        box[3] = max(_box[1], _box[3])
-        return box
+        _box = np.clip(_box, [0, 0, 0, 0], [self._clamp[0], self._clamp[1], self._clamp[0], self._clamp[1]])
+        _box = np.array([
+            min(_box[0], _box[2]), min(_box[1], _box[3]),  # x1, y1
+            max(_box[0], _box[2]), max(_box[1], _box[3])   # x2, y2
+        ], dtype=dtype)
+        return _box
 
 
 class ImageAnnotated(Image):
@@ -94,20 +95,18 @@ class ImageAnnotated(Image):
         self._client_node_size = client_node_size
         self._node_size = 1 # initial value will be updated immediately on resize
         self._dragging = False
+
+        # colours for drawing boxes
+        self._box_fill_color = color_to_hex((255, 182, 193, 50))  # Light pink
+        self._box_stroke_color = color_to_hex((255, 182, 193, 200))
+        self._selection_fill_color = color_to_hex((144, 238, 144, 50)) # Light green
+        self._selection_stroke_color = color_to_hex((144, 238, 144, 200))
     
         super().__init__(image=image, layers=3, **kwargs)
-        
-        # set up colours for boxes
-        with self.hold_repaint(layer=LAYER_SELECTION):
-            self.stroke_color = "green"
-            self.fill_color = "transparent"
-        with self.hold_repaint(layer=LAYER_BOXES):
-            self.stroke_color = "red"
-            self.fill_color = "transparent"
-
         self.observe(self._repaint_boxes, names="boxes")
         self.observe(self._repaint_selection, names="selection")
-       
+    
+
     @observe("client_size", "size")
     def _on_resize(self, _: dict) -> None:
         """Update stroke width based on client size."""
@@ -139,12 +138,16 @@ class ImageAnnotated(Image):
     def _repaint_boxes(self, _) -> None:
         with self.hold_repaint(layer=LAYER_BOXES):
             self.clear()
+            self.fill_color = self._box_fill_color
+            self.stroke_color = self._box_stroke_color
             if self.boxes is not None and len(self.boxes) > 0:
                 self.draw_rect(self.boxes[:, :4])
 
     def _repaint_selection(self, _) -> None:
         with self.hold_repaint(layer=LAYER_SELECTION):
             self.clear()
+            self.fill_color = self._selection_fill_color
+            self.stroke_color = self._selection_stroke_color
             if self.selection is not None:
                 self.draw_rect(self.selection.get_box()[None, :])
 
@@ -193,16 +196,16 @@ class ImageAnnotated(Image):
         if select_corner.any():
             corner, selected = np.nonzero(select_corner)
             corner, selected = corner[-1].item(), selected[-1].item()
-            return BoxSelection(self.boxes[selected], 5 + corner, selected)
+            return BoxSelection(self.boxes[selected], 5 + corner, selected, self.size)
         # edge selection takes priority over inside selection
         edge = np.stack([left_sel, right_sel, top_sel, bottom_sel])
         select_edge = edge & select_inside[np.newaxis, :]
         if select_edge.any():
             edge, selected = np.nonzero(select_edge)
             edge, selected = edge[-1].item() + 1, selected[-1].item()
-            return BoxSelection(self.boxes[selected], edge, selected)
+            return BoxSelection(self.boxes[selected], edge, selected, self.size)
         selected = np.nonzero(select_inside)[0][-1].item()
-        return BoxSelection(self.boxes[selected], BOX_NODE_INSIDE, selected)
+        return BoxSelection(self.boxes[selected], BOX_NODE_INSIDE, selected, self.size)
 
     def _drag_selection(
         self, x: int, y: int, x_start: int, y_start: int
@@ -267,6 +270,7 @@ class ImageAnnotated(Image):
     @hold_repaint
     def _drag_end(self, _: dict) -> None:
         box = self.selection.get_box()  # get xyxy box
+       
         if self.selection.index >= 0:
             _new = self.boxes.copy()  # trigger change notification
             _new[self.selection.index, :] = box
@@ -287,6 +291,7 @@ class ImageAnnotated(Image):
                 box=xyxy,
                 node=BOX_NODE_BOTTOM_RIGHT,
                 index=-1,  # negative index indicates that it is a new box
+                clamp=self.size,
             )
         self._drag_continue(event)
 

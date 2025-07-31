@@ -7,9 +7,6 @@ import anywidget
 import traitlets
 import numpy as np
 
-import time
-
-
 class Canvas(anywidget.AnyWidget):
     """A multi-layer canvas widget that displays multiple image layers stacked on top of each other."""
 
@@ -98,7 +95,8 @@ class Canvas(anywidget.AnyWidget):
         raise AttributeError("stroke_color is write-only.")
 
     @stroke_color.setter
-    def stroke_color(self, value: str) -> None:
+    def stroke_color(self, value: Any) -> None:
+        value = color_to_hex(value)
         self.add_draw_command(
             {"type": "set", "name": "strokeStyle", "value": value, "layer": self._layer}
         )
@@ -109,7 +107,8 @@ class Canvas(anywidget.AnyWidget):
         raise AttributeError("fill_color is write-only.")
 
     @fill_color.setter
-    def fill_color(self, value: str) -> None:
+    def fill_color(self, value: Any) -> None:
+        value = color_to_hex(value)
         self.add_draw_command(
             {"type": "set", "name": "fillStyle", "value": value, "layer": self._layer}
         )
@@ -357,3 +356,43 @@ def asbytes(image_data: Any, size: tuple[int, int]) -> bytes:
         raise ValueError(
             f"Argument: `image_data` expected numpy array or bytes got {type(image_data)}"
         )
+
+def color_to_hex(color : Any) -> str:
+    """Convert color tuple to hex string.
+    
+    Args:
+        color_tuple (tuple): RGB (r, g, b) or RGBA (r, g, b, a)
+                           - float values: 0-1 range (normalized)
+                           - int values: 0-255 range
+                           - alpha: always 0-1 (float)
+                           - overflow handled with modulo
+    
+    Returns:
+        str: Hex color string (#RRGGBB or #RRGGBBAA)
+    """
+    if isinstance(color, str):
+        return color
+
+    if len(color) == 3:
+        r, g, b = color
+        a = 255
+    elif len(color) == 4:
+        r, g, b, a = color
+    else:
+        raise ValueError("Tuple must have 3 (RGB) or 4 (RGBA) elements")
+    
+    def as_int(val):
+        if isinstance(val, float):
+            # Float: 0-1 range, use modulo then convert to 0-255
+            normalized = val % 1.0
+            return int(normalized * 255)
+        else:
+            # Int: 0-255 range, use modulo to wrap
+            return int(val) % 256
+    
+    r = as_int(r)
+    g = as_int(g)
+    b = as_int(b)
+    a = as_int(a)
+    return f"#{r:02x}{g:02x}{b:02x}{a:02x}"
+    
