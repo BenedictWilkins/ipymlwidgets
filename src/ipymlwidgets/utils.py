@@ -2,9 +2,6 @@ from typing import Any, Sequence
 import torch
 import numpy as np
 import PIL as pillow
-
-import distinctipy
-
 from traitlets import TraitType
 
 

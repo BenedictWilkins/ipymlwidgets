@@ -63,27 +63,11 @@ function setupMouseEvents(model, wrapper, canvases) {
             w_client: containerWidth,
             h_client: containerHeight,
             w: canvases[0].width,
-            h: canvases[0].height
+            h: canvases[0].height,
+            t: event.timeStamp,
         };
     }
 
-    // function getMouseData(event) {
-    //     const rect = wrapper.getBoundingClientRect();
-    //     const x = event.clientX - rect.left;
-    //     const y = event.clientY - rect.top;
-    //     const canvasX = Math.floor((x / rect.width) * canvases[0].width);
-    //     const canvasY = Math.floor((y / rect.height) * canvases[0].height);
-    //     return {
-    //         x: canvasX,
-    //         y: canvasY,
-    //         x_client: x,
-    //         y_client: y,
-    //         w_client: rect.width,
-    //         h_client: rect.height,
-    //         w: canvases[0].width,
-    //         h: canvases[0].height
-    //     };
-    // }
 
     function handleMouseDown(event) {
         isMouseDown = true;
@@ -190,7 +174,8 @@ function drawRect(command, ctx, offCtx) {
     const intArr = new Int32Array(buffer);
 
     if (pixel_perfect) {
-        const border = ctx.lineWidth || 1;
+        console.log(`[draw] pixel_perfect:`, ctx.lineWidth);
+        const border = ctx.lineWidth || 0;
         const strokeStyle = ctx.strokeStyle;
         const fillStyle = ctx.fillStyle;
         const isTransparent = (
@@ -205,6 +190,7 @@ function drawRect(command, ctx, offCtx) {
             const y0 = intArr[baseIdx + 1];
             const x1 = intArr[baseIdx + 2];
             const y1 = intArr[baseIdx + 3];
+            console.log(`[draw] Drawing rect #${i}:`, { x0, y0, x1, y1 }, border, ctx.lineWidth);
 
             // Inclusive: width/height is (x1-x0)+1, (y1-y0)+1
             const w = x1 - x0;

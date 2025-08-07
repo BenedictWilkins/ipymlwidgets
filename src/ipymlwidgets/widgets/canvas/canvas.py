@@ -85,6 +85,7 @@ class Canvas(anywidget.AnyWidget):
 
     @stroke_width.setter
     def stroke_width(self, value: int) -> None:
+        display(value)
         self.add_draw_command(
             {"type": "set", "name": "lineWidth", "value": value, "layer": self._layer}
         )

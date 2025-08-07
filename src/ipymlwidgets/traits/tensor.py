@@ -278,11 +278,13 @@ TF_DEP: TensorFlowDependency = TensorFlowDependency()
 NP_DEP: NumpyDependency = NumpyDependency()
 
 OPTIONAL_DEPS = [NP_DEP, PT_DEP, TF_DEP]
-
+    
 
 class Tensor(TraitType):
     """A trait type for numpy arrays with optional framework support and conversion."""
 
+    TENSOR_DEPENDENCIES = {dep.code: dep for dep in OPTIONAL_DEPS if dep.available}
+    
     def __init__(
         self,
         convert_to: Optional[ConvertTarget] = None,
@@ -297,26 +299,25 @@ class Tensor(TraitType):
         """
         super().__init__(**kwargs)
         # this will always contain numpy!
-        self._dependencies = {dep.code: dep for dep in OPTIONAL_DEPS if dep.available}
-        if not (convert_to is None or convert_to in self._dependencies):
-            codes = list(self._dependencies.keys())
+        self._convert_to = convert_to
+        if not (convert_to is None or convert_to in type(self).TENSOR_DEPENDENCIES):
+            codes = list(type(self).TENSOR_DEPENDENCIES.keys())
             raise ValueError(
                 f"Argument: `convert_to` expected one of {codes} but got {convert_to}"
-            )
-        self._convert_to = convert_to
-
+        )
         types_str = ", ".join(
-            dep.tensor_type for dep in self._dependencies.values() if dep.available
+            dep.tensor_type for dep in type(self).TENSOR_DEPENDENCIES.values() if dep.available
         )
         self.info_text = f"[{types_str}]"
 
-    def get_dependency(self, obj: Any, value: Any) -> Optional[OptionalDependency]:
+    
+    @classmethod
+    def get_dependency(cls, value: Any) -> Optional[OptionalDependency]:
         """Get the dependency for the current tensor value.
 
         The dependency can be used to do direct data conversions.
 
         Args:
-            obj (Any): The object that owns this trait.
             value (Any): The value of this trait.
 
         Returns:
@@ -324,17 +325,17 @@ class Tensor(TraitType):
         """
         if value is None or value is Undefined:
             return value
-        for dep in self._dependencies.values():
+        for dep in cls.TENSOR_DEPENDENCIES.values():
             if dep.is_tensor(value):
                 return dep
-        self.error(obj, value)
+        raise ValueError(f"Argument: `value` expected a tensor but got {type(value)}")
 
     def validate(self, obj: Any, value: Any) -> Optional[SupportedTensor]:
         """Validate and optionally convert the tensor value.
 
         Args:
-            obj (Any): The object that owns this trait.
             value (Any): The value to validate.
+            obj (Any): The object that owns this trait, only used to produce a nicer error message if the trait cannot be found. Defaults to None.
 
         Returns:
             Optional[SupportedTensor]: The validated (and possibly converted) value.
@@ -343,14 +344,14 @@ class Tensor(TraitType):
             return value  # nothing to do here
 
         # perform type checking and get the code of the dependency (if it is valid)
-        dep = self.get_dependency(obj, value)  # will never be None...
+        dep = type(self).get_dependency(value)  # will never be None...
         # perform the conversion if requested
         if self._convert_to is None or self._convert_to == dep.code:
             return value  # no conversion was requested
         # convert to intermediate format (numpy)
         value = dep.to_numpy(value)
         # convert to target format
-        return self._dependencies[self._convert_to].from_numpy(value)
+        return type(self).TENSOR_DEPENDENCIES[self._convert_to].from_numpy(value)
 
     def __eq__(self, other: Any) -> bool:  # noqa
         """Use identity comparison to avoid tensor/array comparison issues."""

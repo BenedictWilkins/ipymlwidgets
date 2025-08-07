@@ -311,13 +311,22 @@ class ImageAnnotated(Image):
         # manual because internal mutation of self.selection
         self._repaint_selection(None)
 
-    def crop(self) -> list[np.ndarray]:
+    def crop_selection(self) -> np.ndarray:
+        """Crop out the selection box from the image."""
+        if self.selection is None:
+            return None
+        box = self.selection.get_box()
+        return self.crop([self.selection.index])[0]
+
+    def crop(self, indicies : Optional[list[int]] = None) -> list[np.ndarray]:
         """Crop out each box from the image."""
-        boxes = self.boxes[:, :4]
-        boxes = boxes.clip(0, self.image.shape[1])
-        image = self._to_numpy_image(self.image)  # HWC
+        if indicies is None:
+            boxes = self.boxes[:, :4]
+        else:
+            boxes = self.boxes[indicies, :4]
         crops = []
         for box in boxes:
-            crop = image[box[1] : box[3], box[0] : box[2]]
+            # self.image is already a numpy array, it is automatically converted to HWC uint8
+            crop = self.image[box[1] : box[3], box[0] : box[2]]
             crops.append(crop)
         return crops

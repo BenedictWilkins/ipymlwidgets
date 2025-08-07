@@ -11,7 +11,7 @@ from ipymlwidgets.traits.tensor import (
 
 
 class Image(Canvas):
-    """A canvas widget that displays image data with CSS layout controls."""
+    """A canvas widget that displays image data."""
 
     # Backing image field - not synced
     image = TTensor(allow_none=True).tag(sync=False)
@@ -21,11 +21,10 @@ class Image(Canvas):
         image: Optional[SupportedTensor] = None,
         **kwargs,
     ) -> None:
-        """Initialize the canvas widget.
+        """Constructor.
 
         Args:
-            image (Optional[np.ndarray]): Initial image array with shape (H, W, 3) or (H, W, 4). Defaults to None.
-            **kwargs: Additional keyword arguments passed to parent.
+            image (Optional[SupportedTensor]): image to display. Defaults to None.
         """
         # Initialize width and height from image if provided
         if image is not None:
@@ -43,7 +42,7 @@ class Image(Canvas):
     def _to_numpy_image(
         self, tensor: Optional[SupportedTensor]
     ) -> Optional[np.ndarray]:
-        """Convert image array to bytes and update synced fields.
+        """Convert image array to numpy array.
 
         Args:
             tensor (SupportedTensor): Image tensor to convert.
@@ -54,7 +53,7 @@ class Image(Canvas):
         if tensor is None:
             return None
         image_trait: TTensor = self.traits()["image"]
-        dependency: OptionalDependency = image_trait.get_dependency(self, tensor)
+        dependency: OptionalDependency = image_trait.get_dependency(tensor, obj=self)
         array = dependency.to_numpy_image(tensor)
         assert array.ndim == 3
         assert array.shape[2] == 4  # HWC format RGBA
@@ -65,7 +64,7 @@ class Image(Canvas):
         """Convert a supported tensor to a numpy array."""
         # assume that we are being consistent with tensor type usage...
         image_trait: TTensor = self.traits()["image"]
-        dependency: OptionalDependency = image_trait.get_dependency(self, tensor)
+        dependency: OptionalDependency = image_trait.get_dependency(tensor, obj=self)
         return dependency.to_numpy(tensor)
 
     def _repaint_image(self, change: Optional[dict[str, Any]] = None) -> None:
