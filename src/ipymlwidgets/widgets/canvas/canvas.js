@@ -28,6 +28,61 @@ function updateCanvas(model, canvases, offCanvas) {
     offCanvas.height = height;
 }
 
+function setupKeyboardEvents(model, wrapper) {
+    function handleKeyDown(event) {
+        const keyData = {
+            key: event.key,           // The actual key pressed (e.g., 'a', 'Enter', 'ArrowUp')
+            code: event.code,         // Physical key code (e.g., 'KeyA', 'Enter', 'ArrowUp')
+            shift: event.shiftKey,
+            ctrl: event.ctrlKey,
+            alt: event.altKey,
+            meta: event.metaKey,
+            repeat: event.repeat,     // true if key is being held down
+            t: event.timeStamp
+        };
+        model.set("key_press", keyData);
+        model.save_changes();
+    }
+
+    function handleKeyUp(event) {
+        const keyData = {
+            key: event.key,
+            code: event.code,
+            shift: event.shiftKey,
+            ctrl: event.ctrlKey,
+            alt: event.altKey,
+            meta: event.metaKey,
+            t: event.timeStamp
+        };
+        model.set("key_release", keyData);
+        model.save_changes();
+        console.log("key up", keyData);
+    }
+
+
+
+    // Make wrapper focusable and add keyboard listeners
+    wrapper.setAttribute('tabindex', '0');
+    wrapper.addEventListener('keydown', handleKeyDown);
+    wrapper.addEventListener('keyup', handleKeyUp);
+
+    // Auto-focus when clicked
+    wrapper.addEventListener('mouseenter', () => {
+        wrapper.focus();
+    });
+
+    wrapper.addEventListener('mouseleave', () => {
+        wrapper.blur();
+    });
+
+    // Return cleanup function
+    return () => {
+        wrapper.removeEventListener('keydown', handleKeyDown);
+        wrapper.removeEventListener('keyup', handleKeyUp);
+        wrapper.removeEventListener('mouseenter', wrapper.focus);
+        wrapper.removeEventListener('mouseleave', wrapper.blur);
+    };
+}
 
 // --- Mouse Event Handling ---
 function setupMouseEvents(model, wrapper, canvases) {
@@ -65,11 +120,16 @@ function setupMouseEvents(model, wrapper, canvases) {
             w: canvases[0].width,
             h: canvases[0].height,
             t: event.timeStamp,
+            shift: event.shiftKey,
+            ctrl: event.ctrlKey,
+            alt: event.altKey,
         };
     }
 
 
     function handleMouseDown(event) {
+        event.preventDefault();
+
         isMouseDown = true;
         const mouseData = getMouseData(event);
         dragStartPos = { x: mouseData.x, y: mouseData.y, clientX: event.clientX, clientY: event.clientY };
@@ -105,10 +165,14 @@ function setupMouseEvents(model, wrapper, canvases) {
     }
 
     function handleMouseMove(event) {
+        if (isMouseDown) {
+            event.preventDefault();
+        }
+
         const mouseData = getMouseData(event);
         model.set("mouse_move", mouseData);
         //console.log("mouse move", mouseData);
-        model.save_changes();
+
         if (isMouseDown && dragStartPos) {
             const dx = event.clientX - dragStartPos.clientX;
             const dy = event.clientY - dragStartPos.clientY;
@@ -120,22 +184,27 @@ function setupMouseEvents(model, wrapper, canvases) {
                     y_start: dragStartPos.y
                 };
                 model.set("mouse_drag", dragData);
-                model.save_changes();
             }
         }
-    }
-
-    function handleMouseEnter(event) {
-        const mouseData = getMouseData(event);
-        model.set("mouse_enter", mouseData);
         model.save_changes();
     }
 
+    function handleMouseEnter(event) {
+        if (event.target === wrapper) {
+            const mouseData = getMouseData(event);
+            model.set("mouse_enter", mouseData);
+            model.save_changes();
+        }
+    }
+
     function handleMouseLeave(event) {
-        const mouseData = getMouseData(event);
-        model.set("mouse_leave", mouseData);
-        isMouseDown = false;
-        dragStartPos = null;
+        if (event.target === wrapper) {
+            const mouseData = getMouseData(event);
+            model.set("mouse_leave", mouseData);
+            model.save_changes();
+            isMouseDown = false;
+            dragStartPos = null;
+        }
     }
 
     wrapper.addEventListener('mousedown', handleMouseDown);
@@ -421,6 +490,7 @@ function render({ model, el }) {
 
     // Setup mouse events
     const cleanupMouse = setupMouseEvents(model, wrapper, canvases);
+    const cleanupKeyboard = setupKeyboardEvents(model, wrapper);
 
     // ResizeObserver to track actual rendered size
     let resizeObserver;
@@ -452,7 +522,9 @@ function render({ model, el }) {
             scheduled = true;
             requestAnimationFrame(() => {
                 //console.log("[draw]", buffer.length);
+                console.time('[draw]');
                 draw(buffer, contexts, offCtx);
+                console.timeEnd('[draw]');
                 scheduled = false;
             });
         }
@@ -479,6 +551,7 @@ function render({ model, el }) {
             resizeObserver.disconnect();
         }
         cleanupMouse();
+        cleanupKeyboard();
     };
 }
 export default { render }; 

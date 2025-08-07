@@ -13,10 +13,6 @@ class Canvas(anywidget.AnyWidget):
     # Canvas dimensions (pixel data)
     size = traitlets.Tuple(traitlets.Int(), traitlets.Int(), default_value=(8, 8)).tag(sync=True)
 
-    # # CSS layout properties
-    # css_width = traitlets.Unicode("100%").tag(sync=True)
-    # css_height = traitlets.Unicode("100%").tag(sync=True)
-
     # Client-side rendered size (actual display size)
     client_size = traitlets.Tuple(
         traitlets.Int(), traitlets.Int(), default_value=(0, 0)
@@ -42,6 +38,9 @@ class Canvas(anywidget.AnyWidget):
     mouse_drag = traitlets.Dict().tag(sync=True)
     mouse_leave = traitlets.Dict().tag(sync=True)
     mouse_enter = traitlets.Dict().tag(sync=True)
+
+    key_press = traitlets.Dict().tag(sync=True)
+    key_release = traitlets.Dict().tag(sync=True)
 
     _css = """
     :host {
@@ -85,7 +84,6 @@ class Canvas(anywidget.AnyWidget):
 
     @stroke_width.setter
     def stroke_width(self, value: int) -> None:
-        display(value)
         self.add_draw_command(
             {"type": "set", "name": "lineWidth", "value": value, "layer": self._layer}
         )

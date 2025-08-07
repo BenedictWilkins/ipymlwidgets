@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Optional, Any, Iterable
 import traitlets
 import numpy as np
 from PIL import Image
@@ -42,10 +42,6 @@ class ImageGrid(Canvas):
             **kwargs: Additional arguments passed to Canvas.
         """
         images = images or []
-
-        
-        # Calculate grid dimensions
-        num_images = len(images)
         
         # Calculate total canvas size
         total_width = columns * cell_size[0]
@@ -81,20 +77,6 @@ class ImageGrid(Canvas):
     def get_selected(self) -> list[SupportedTensor]:
         return [self._images[i] for i in self.selection]
 
-    def save_selected(self, directory : str, mode : str = "RGB"):
-        if len(self.selection) == 0:
-            return
-        z = len(str(len(self.selection)))
-        directory = Path(directory)
-        directory.mkdir(parents=True, exist_ok=False)
-        for i, image in enumerate(self.get_selected()):
-            name = str(i).zfill(z)
-            path = Path(directory) / f"{name}.png"
-            image = to_numpy_image(image)
-            print(image.shape)
-            image = Image.fromarray(image).convert(mode)
-            image.save(path.as_posix())
-
     @property
     def grid_size(self):
         return self.columns * self.rows
@@ -106,12 +88,19 @@ class ImageGrid(Canvas):
         image = resize_image_letterbox(image, self.cell_size)
         return image
 
+    def extend(self, images: Iterable[SupportedTensor]):
+        """Extend the grid with a list of images."""
+        for image in images:
+            self._images.append(image)
+            self._images_cache.append(self._new_cached_image(-1))
+        self._render_grid()
+
     def insert(self, index: int, image: SupportedTensor):
         """Insert an image at the specified index."""
         self._images.insert(index, image)
         # this image is the one that will be rendered
         self._images_cache.insert(index, self._new_cached_image(index))
-        self._render_grid(start=index)
+        self._render_grid()
 
     def append(self, image: SupportedTensor):
         """Add an image to the end of the grid."""
@@ -119,9 +108,20 @@ class ImageGrid(Canvas):
         self._images_cache.append(self._new_cached_image(-1))
         self._render_image_at_index(-1)
     
+    def remove(self, index: int | list[int] | set[int]):
+        """Remove image(s) from the grid."""
+        if isinstance(index, int):
+            index = [index]
+        for i in sorted(index, reverse=True):
+            self._images.pop(i)
+            self._images_cache.pop(i)
+        self._render_grid()
+
 
     @observe("mouse_down")
     def _on_mouse_down(self, event: dict):
+        if len(self._images) == 0:
+            return
         index = event['new']['y'] // self.cell_size[1] * self.columns + event['new']['x'] // self.cell_size[0]
         if index > len(self._images):
             return
@@ -136,6 +136,8 @@ class ImageGrid(Canvas):
     
     @observe("mouse_drag")
     def _on_mouse_drag(self, event: dict):
+        if len(self._images) == 0:
+            return
         index = event['new']['y'] // self.cell_size[1] * self.columns + event['new']['x'] // self.cell_size[0]
         if index > len(self._images):
             return
@@ -174,7 +176,8 @@ class ImageGrid(Canvas):
         """Render all images in the grid."""
         with self.hold_repaint(layer=0):
             self.clear()
-            for idx in range(start, end or len(self._images)):
+            end = end or min(self.grid_size, len(self._images))
+            for idx in range(start, end):
                 self._render_image_at_index(idx)
     
     def _render_image_at_index(self, index: int):
@@ -183,7 +186,10 @@ class ImageGrid(Canvas):
         Args:
             index (int): index of the image to render.
         """
-        index = index % len(self._images)
+        if index >= self.grid_size:
+            raise ValueError(f"Index {index} is out of bounds for grid size {self.grid_size}.")
+
+        index = index % self.grid_size
         image = self._images_cache[index]
        
         # Calculate grid position
