@@ -88,6 +88,10 @@ class Box(anywidget.AnyWidget):
         self.children.append(widget)
         self.send_state()
 
+    def replace_child(self, widget, index: int):
+        self.children[index] = widget
+        self.send_state()
+
     def remove_child(self, widget):
         self.children.remove(widget)
         self.send_state()

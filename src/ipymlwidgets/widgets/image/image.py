@@ -53,7 +53,7 @@ class Image(Canvas):
         if tensor is None:
             return None
         image_trait: TTensor = self.traits()["image"]
-        dependency: OptionalDependency = image_trait.get_dependency(tensor, obj=self)
+        dependency: OptionalDependency = TTensor.get_dependency(tensor)
         array = dependency.to_numpy_image(tensor)
         assert array.ndim == 3
         assert array.shape[2] == 4  # HWC format RGBA
@@ -64,7 +64,7 @@ class Image(Canvas):
         """Convert a supported tensor to a numpy array."""
         # assume that we are being consistent with tensor type usage...
         image_trait: TTensor = self.traits()["image"]
-        dependency: OptionalDependency = image_trait.get_dependency(tensor, obj=self)
+        dependency: OptionalDependency = TTensor.get_dependency(tensor)
         return dependency.to_numpy(tensor)
 
     def _repaint_image(self, change: Optional[dict[str, Any]] = None) -> None:
@@ -73,6 +73,8 @@ class Image(Canvas):
             self.set_image(self._to_numpy_image(self.image))
         else:
             image = change["new"]
+            if image is None:
+                return self.set_image(None)
             with self.hold_trait_notifications():
                 image = self._to_numpy_image(image)  # HWC
                 self.size = (image.shape[1], image.shape[0])

@@ -19,71 +19,88 @@ class ItemOCR(anywidget.AnyWidget):
         );
     }
     async function render({ model, el }) {
-       let model_ids = model.get("children");
+        let model_ids = model.get("children");
         let children_models = await unpack_models(model_ids, model.widget_manager);
 
-        // Assuming there are only two children: image and text
         let imageModel = children_models[0];
         let textModel = children_models[1];
 
-        // Create views for the image and text
         let imageView = await model.widget_manager.create_view(imageModel);
         let textView = await model.widget_manager.create_view(textModel);
-       
-        // Append the children directly
-        el.appendChild(imageView.el);
+
+        // Create a wrapper for the image to make it scrollable
+        const imageContainer = document.createElement("div");
+        imageContainer.classList.add("ocr-image-container");
+        imageContainer.appendChild(imageView.el);
+
+        el.appendChild(imageContainer);
         el.appendChild(textView.el);
 
-        // Add the "ocr-item" class to the container for custom styling
         el.classList.add("ocr-item");
         imageView.el.classList.add("widget-image");
         textView.el.classList.add("widget-text");
-
-    }
+        }
     export default { render };
     """
 
     _css = """
-    .ocr-item {
-        display: flex;
-        flex-direction: column;
-        padding: 10px;
-        width: 100%;
-        height: 100%; /* Ensures the container takes full height */
-        box-sizing: border-box; /* Includes padding in height/width calculation */
+   .ocr-image-container {
+    height: 90px;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    display: block;
+    white-space: nowrap;
+    box-sizing: border-box;
 
-        /* Add a border and rounded corners */
-        border: 1px solid #ccc;  /* You can change the border color and thickness */
-        border-radius: 8px;      /* This gives the rounded corners */
-        background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    padding: 0;
+}
 
-        /* Align children to the top */
-        align-items: flex-start;  /* Align image and text to the left */
-        justify-content: flex-start; /* Align content to the top */
-    }
+/* Target the widget wrapper */
+.ocr-image-container > .widget-image {
+    display: inline-block;
+    height: 100% !important;
+    width: auto !important;
+    vertical-align: top;
+    max-width: none !important;
+    box-sizing: content-box;
+    white-space: nowrap;
+    overflow: visible;
+}
 
-    .ocr-item > .widget-image {
-        border: 1px solid #ccc;  /* You can change the border color and thickness */
-        border-radius: 4px;      /* This gives the rounded corners */
-        object-fit: contain; /* Ensure image retains aspect ratio */
-        width: auto;      /* Ensure image takes up full width */
-        height: 100%;     /* Ensure image takes up full height available */
-        margin-bottom: 10px; /* Space below the image */
-        display: block;
-    }
+/* Most important part: force child elements (canvas or otherwise) to grow */
+.ocr-image-container > .widget-image * {
+    height: 100% !important;
+    width: auto !important;
+    max-width: none !important;
+    display: inline-block !important;
+    box-sizing: content-box !important;
+    object-fit: contain !important;
+    white-space: nowrap;
+}
 
-    .ocr-item > .widget-text {
-        flex: 0 1 auto;   /* Let the text take the remaining space */
-        width: 100%;      /* Ensure text box fills the available width */
-        margin: 0;
-        padding: 0;
-    }
+.ocr-image-container {
+    scrollbar-width: thin;                  /* Firefox */
+    scrollbar-color: #bbb transparent;      /* Firefox */
 
-    .ocr-item > .widget-text input {
-        border: 1px solid #ccc;      /* Add border to the input element */
-        border-radius: 4px;         /* Rounded corners for the text input */
-        background-color: white;     /* Background color for the input box */
-    }
+    /* WebKit (Chrome, Edge, Safari) */
+}
+.ocr-image-container::-webkit-scrollbar {
+    height: 6px;
+}
+.ocr-image-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+.ocr-image-container::-webkit-scrollbar-thumb {
+    background-color: #bbb;
+    border-radius: 3px;
+}
+.ocr-image-container::-webkit-scrollbar-thumb:hover {
+    background-color: #999;
+}
     """
     children = traitlets.List(trait=traitlets.Instance(W.DOMWidget)).tag(sync=True, **W.widget_serialization)
 
@@ -106,3 +123,50 @@ class ItemOCR(anywidget.AnyWidget):
     def unfocus(self):
         """Unfocus the text input."""
         self._text.unfocus()
+
+
+
+
+# .ocr-item {
+#         display: flex;
+#         flex-direction: column;
+#         padding: 4px;
+#         margin: 0;
+#         width: 100%;
+#         height: 100%; /* Ensures the container takes full height */
+#         min-height: 86px; /* Set a minimum height */
+#         box-sizing: border-box; /* Includes padding in height/width calculation */
+
+#         /* Add a border and rounded corners */
+#         border: 1px solid #ccc;  /* You can change the border color and thickness */
+#         border-radius: 8px;      /* This gives the rounded corners */
+#         background-color: #f0f0f0;
+
+#         /* Align children to the top */
+#         align-items: flex-start;  /* Align image and text to the left */
+#         justify-content: flex-start; /* Align content to the top */
+#     }
+
+#     .ocr-item > .widget-image {
+#         border: 1px solid #ccc;  /* You can change the border color and thickness */
+#         border-radius: 4px;      /* This gives the rounded corners */
+#         object-fit: contain; /* Ensure image retains aspect ratio */
+#         width: auto;      /* Ensure image takes up full width */
+#         height: 100%;     /* Ensure image takes up full height available */
+#         // min-height: 100px; /* Set a minimum height */
+#         margin-bottom: 4px; /* Space below the image */
+#         display: block;
+#     }
+
+#     .ocr-item > .widget-text {
+#         flex: 0 1 auto;   /* Let the text take the remaining space */
+#         width: 100%;      /* Ensure text box fills the available width */
+#         margin: 0;
+#         padding: 0;
+#     }
+
+#     .ocr-item > .widget-text input {
+#         border: 1px solid #ccc;      /* Add border to the input element */
+#         border-radius: 4px;         /* Rounded corners for the text input */
+#         background-color: white;     /* Background color for the input box */
+#     }

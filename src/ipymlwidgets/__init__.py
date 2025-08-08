@@ -5,6 +5,6 @@ __author__ = "Benedict Wilkins"
 __email__ = "benedict.wilkins@sony.com"
 
 # Import commonly used classes/functions
-from .widgets import Image, ImageAnnotated, Canvas, Box
+from .widgets import Image, ImageAnnotated, Canvas, Box, Text, Button
 
-__all__ = ["Image", "ImageAnnotated", "Canvas", "Box"]
+__all__ = ["Image", "ImageAnnotated", "Canvas", "Box", "Text", "Button"]

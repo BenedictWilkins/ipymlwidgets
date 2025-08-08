@@ -128,9 +128,9 @@ class ImageAnnotated(Image):
         # Set node size in canvas pixels so it appears as NODE_SIZE on the client
         self._node_size = int(math.ceil(self._client_node_size * scale))
         with self.hold_repaint(layer=LAYER_SELECTION):
-            self.stroke_width = self._node_size
+            self.stroke_width = max(self._node_size // 4, 1)
         with self.hold_repaint(layer=LAYER_BOXES):
-            self.stroke_width = self._node_size
+            self.stroke_width = max(self._node_size // 4, 1)
         
         self._repaint_boxes(None)
         self._repaint_selection(None)
@@ -310,6 +310,14 @@ class ImageAnnotated(Image):
         self._drag_selection(event["x"], event["y"], event["x_start"], event["y_start"])
         # manual because internal mutation of self.selection
         self._repaint_selection(None)
+
+    def set_boxes(self, boxes: SupportedTensor) -> None:
+        """Set the boxes to be displayed."""
+        if boxes is None:
+            self.boxes = np.array([], dtype=np.int32).reshape(0, 4)
+        else:
+            self.boxes = np.array(boxes, dtype=np.int32).reshape(-1, 4)
+        self.selection = None
 
     def crop_selection(self) -> np.ndarray:
         """Crop out the selection box from the image."""
