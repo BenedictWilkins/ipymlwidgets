@@ -146,9 +146,9 @@ class ImageAnnotated(Image):
     def _repaint_selection(self, _) -> None:
         with self.hold_repaint(layer=LAYER_SELECTION):
             self.clear()
-            self.fill_color = self._selection_fill_color
-            self.stroke_color = self._selection_stroke_color
             if self.selection is not None:
+                self.fill_color = self._selection_fill_color
+                self.stroke_color = self._selection_stroke_color
                 self.draw_rect(self.selection.get_box()[None, :])
 
     def _select_box(self, x: int, y: int) -> Optional[BoxSelection]:
@@ -311,6 +311,17 @@ class ImageAnnotated(Image):
         # manual because internal mutation of self.selection
         self._repaint_selection(None)
 
+    def remove_box(self, index: int) -> None:
+        """Remove a box from the image."""
+        index = int(index) % len(self.boxes)
+        s_index = self.selection.index % len(self.boxes) if self.selection is not None else None
+        self.boxes = np.delete(self.boxes, index, axis=0)
+
+        display((index, s_index))
+        if s_index == index:
+            self.selection = None
+            self._repaint_selection(None)
+
     def set_boxes(self, boxes: SupportedTensor) -> None:
         """Set the boxes to be displayed."""
         if boxes is None:
@@ -323,7 +334,6 @@ class ImageAnnotated(Image):
         """Crop out the selection box from the image."""
         if self.selection is None:
             return None
-        box = self.selection.get_box()
         return self.crop([self.selection.index])[0]
 
     def crop(self, indicies : Optional[list[int]] = None) -> list[np.ndarray]:

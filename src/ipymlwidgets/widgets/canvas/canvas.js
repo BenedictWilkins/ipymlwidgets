@@ -17,6 +17,7 @@ function updateClientSize(model, wrapper) {
 
 function updateCanvas(model, canvases, offCanvas) {
     const size = model.get("size");
+    console.log("[update canvas]", size);
     const width = size[0];
     const height = size[1];
     for (let i = 0; i < canvases.length; i++) {

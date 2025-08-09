@@ -80,6 +80,9 @@ class Box(anywidget.AnyWidget):
         layout = layout if layout is not None else {}
         super().__init__(children=children, layout=layout)
 
+    def index_child(self, widget):
+        return self.children.index(widget)
+
     def insert_child(self, widget, index : int = 0):
         self.children.insert(index, widget)
         self.send_state()

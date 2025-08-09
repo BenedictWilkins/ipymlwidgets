@@ -36,8 +36,27 @@ class ItemOCR(anywidget.AnyWidget):
         const imageWrapper = document.createElement("div");
         imageWrapper.classList.add("ocr-image-wrapper");
         imageWrapper.appendChild(imageView.el);
+
+        // Create the X button
+        const closeButton = document.createElement("button");
+        closeButton.classList.add("ocr-close-button");
+        closeButton.innerHTML = "✕";
+        //closeButton.setAttribute("title", "Remove item");
+        
+        // Add click handler for the close button
+        closeButton.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const event = {
+                t: Date.now(),
+                action: "close"
+            };
+            model.set("click_close", event);
+            model.save_changes();
+        });
         
         imageContainer.appendChild(imageWrapper);
+        imageContainer.appendChild(closeButton);  // Add button to container
         el.appendChild(imageContainer);
         el.appendChild(textView.el);
 
@@ -50,20 +69,54 @@ class ItemOCR(anywidget.AnyWidget):
 
     _css = """
     .ocr-item {
-        height: 120px;  /* Set explicit height for the container */
+        height: 90px;  /* Set explicit height for the container */
         display: flex;
         flex-direction: column;
         width: 100%;
         box-sizing: border-box;
     }
 
+    .ocr-close-button:hover {
+        color: #333;
+        transform: scale(1.1);
+    }
+
+    .ocr-close-button:active {
+        transform: scale(0.95);
+    }
+
+    .ocr-close-button {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 16px;
+        height: 16px;
+        border: none;
+        padding-right: 8px;
+        padding-top: 4px;
+        padding-bottom: 1px;
+        background-color: rgba(255, 255, 255, 0.8);
+        border-radius: 4px;    /* This makes it circular */
+        color: #666;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10; 
+        transition: all 0.1s ease;
+    }
+
     .ocr-image-wrapper {
-        display: block;
+        display: inline-block;
         height: 100%;
         width: auto;
         box-sizing: border-box;
-        overflow-x: auto;
-        overflow-y: hidden;
+        overflow: hidden;
+        //overflow-x: auto;
+        //overflow-y: hidden;
         white-space: nowrap;
         border: 1px solid #ccc;
         border-radius: 4px;
@@ -72,8 +125,8 @@ class ItemOCR(anywidget.AnyWidget):
     .ocr-image-container {
         flex: 1;  /* Take up remaining space, leaving room for text input */
         width: auto;
-        //overflow-x: auto;
-        //overflow-y: hidden;
+        overflow-x: auto;
+        overflow-y: hidden;
         display: block;
         white-space: nowrap;
         box-sizing: border-box;
@@ -105,22 +158,22 @@ class ItemOCR(anywidget.AnyWidget):
         white-space: nowrap;
     }
 
-    .ocr-item > .ocr-image-container > .ocr-image-wrapper {
+    .ocr-item > .ocr-image-container {
         scrollbar-width: thin;                  /* Firefox */
         scrollbar-color: #bbb transparent;      /* Firefox */
     }
 
-    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar {
-        height: 6px;
+    .ocr-item > .ocr-image-container::-webkit-scrollbar {
+        height: 8px;
     }
-    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar-track {
+    .ocr-item > .ocr-image-container::-webkit-scrollbar-track {
         background: transparent;
     }
-    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar-thumb {
+    .ocr-item > .ocr-image-container::-webkit-scrollbar-thumb {
         background-color: #bbb;
         border-radius: 2px;
     }
-    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar-thumb:hover {
+    .ocr-item > .ocr-image-container::-webkit-scrollbar-thumb:hover {
         background-color: #999;
     }
 
@@ -145,6 +198,7 @@ class ItemOCR(anywidget.AnyWidget):
     }
     """
     children = traitlets.List(trait=traitlets.Instance(W.DOMWidget)).tag(sync=True, **W.widget_serialization)
+    click_close = traitlets.Dict().tag(sync=True)
 
     def __init__(self, image: SupportedTensor, text: str):
         self._image = Image(image)

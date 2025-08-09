@@ -52,7 +52,6 @@ class Image(Canvas):
         """
         if tensor is None:
             return None
-        image_trait: TTensor = self.traits()["image"]
         dependency: OptionalDependency = TTensor.get_dependency(tensor)
         array = dependency.to_numpy_image(tensor)
         assert array.ndim == 3
@@ -67,6 +66,16 @@ class Image(Canvas):
         dependency: OptionalDependency = TTensor.get_dependency(tensor)
         return dependency.to_numpy(tensor)
 
+    def set_image(self, image: Optional[SupportedTensor], layer: Optional[int] = None) -> None:
+        """Set the image to be displayed."""
+        if image is not None:
+            image = self._to_numpy_image(image)  # HWC
+            size = (image.shape[1], image.shape[0]) # WH
+            if size != self.size:
+                self.size = size # update the canvas size before setting the image
+        super().set_image(image, layer=layer)
+
+
     def _repaint_image(self, change: Optional[dict[str, Any]] = None) -> None:
         """Internal call back to repaint the image."""
         if change is None:
@@ -76,9 +85,8 @@ class Image(Canvas):
             if image is None:
                 return self.set_image(None)
             with self.hold_trait_notifications():
-                image = self._to_numpy_image(image)  # HWC
-                self.size = (image.shape[1], image.shape[0])
                 self.set_image(image)
+
 
     def repaint(self) -> None:
         """Manually repaint the image, e.g. after direct pixel operations."""
