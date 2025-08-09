@@ -31,8 +31,13 @@ class ItemOCR(anywidget.AnyWidget):
         // Create a wrapper for the image to make it scrollable
         const imageContainer = document.createElement("div");
         imageContainer.classList.add("ocr-image-container");
-        imageContainer.appendChild(imageView.el);
-
+        
+        // Add wrapper for border-radius clipping
+        const imageWrapper = document.createElement("div");
+        imageWrapper.classList.add("ocr-image-wrapper");
+        imageWrapper.appendChild(imageView.el);
+        
+        imageContainer.appendChild(imageWrapper);
         el.appendChild(imageContainer);
         el.appendChild(textView.el);
 
@@ -44,69 +49,106 @@ class ItemOCR(anywidget.AnyWidget):
     """
 
     _css = """
-   .ocr-image-container {
-    height: 90px;
-    width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    display: block;
-    white-space: nowrap;
-    box-sizing: border-box;
+    .ocr-item {
+        height: 120px;  /* Set explicit height for the container */
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        box-sizing: border-box;
+    }
 
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    margin-bottom: 4px;
-    padding: 0;
-}
+    .ocr-image-wrapper {
+        display: block;
+        height: 100%;
+        width: auto;
+        box-sizing: border-box;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
 
-/* Target the widget wrapper */
-.ocr-image-container > .widget-image {
-    display: inline-block;
-    height: 100% !important;
-    width: auto !important;
-    vertical-align: top;
-    max-width: none !important;
-    box-sizing: content-box;
-    white-space: nowrap;
-    overflow: visible;
-}
+    .ocr-image-container {
+        flex: 1;  /* Take up remaining space, leaving room for text input */
+        width: auto;
+        //overflow-x: auto;
+        //overflow-y: hidden;
+        display: block;
+        white-space: nowrap;
+        box-sizing: border-box;
+        margin-bottom: 4px;
+        padding: 0;
+    }
 
-/* Most important part: force child elements (canvas or otherwise) to grow */
-.ocr-image-container > .widget-image * {
-    height: 100% !important;
-    width: auto !important;
-    max-width: none !important;
-    display: inline-block !important;
-    box-sizing: content-box !important;
-    object-fit: contain !important;
-    white-space: nowrap;
-}
+    /* Target the widget wrapper */
+    .ocr-item > .ocr-image-container > .ocr-image-wrapper > .widget-image {
+        display: inline-block;
+        height: 100% !important;
+        width: auto !important;
+        vertical-align: top;
+        max-width: none !important;
+        min-width: fit-content !important;  /* Allow natural width */
+        box-sizing: content-box;
+        white-space: nowrap;
+        overflow: visible;
+    }
 
-.ocr-image-container {
-    scrollbar-width: thin;                  /* Firefox */
-    scrollbar-color: #bbb transparent;      /* Firefox */
+    /* Force child elements (canvas or otherwise) to grow */
+    .ocr-item > .ocr-image-container > .ocr-image-wrapper > .widget-image * {
+        height: 100% !important;
+        width: auto !important;
+        max-width: none !important;
+        display: inline-block !important;
+        box-sizing: content-box !important;
+        object-fit: contain !important;
+        white-space: nowrap;
+    }
 
-    /* WebKit (Chrome, Edge, Safari) */
-}
-.ocr-image-container::-webkit-scrollbar {
-    height: 6px;
-}
-.ocr-image-container::-webkit-scrollbar-track {
-    background: transparent;
-}
-.ocr-image-container::-webkit-scrollbar-thumb {
-    background-color: #bbb;
-    border-radius: 3px;
-}
-.ocr-image-container::-webkit-scrollbar-thumb:hover {
-    background-color: #999;
-}
+    .ocr-item > .ocr-image-container > .ocr-image-wrapper {
+        scrollbar-width: thin;                  /* Firefox */
+        scrollbar-color: #bbb transparent;      /* Firefox */
+    }
+
+    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar {
+        height: 6px;
+    }
+    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar-thumb {
+        background-color: #bbb;
+        border-radius: 2px;
+    }
+    .ocr-item > .ocr-image-container > .ocr-image-wrapper::-webkit-scrollbar-thumb:hover {
+        background-color: #999;
+    }
+
+    /* Style the text input */
+    .ocr-item > .widget-text {
+        flex: 0 0 auto;  /* Don't grow, fixed size */
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    .ocr-item > .widget-text input {
+        width: 100%;
+        height: 24px;  
+        padding: 4px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-size: 14px;
+        line-height: 1.2;
+    }
     """
     children = traitlets.List(trait=traitlets.Instance(W.DOMWidget)).tag(sync=True, **W.widget_serialization)
 
     def __init__(self, image: SupportedTensor, text: str):
         self._image = Image(image)
-        self._text = W.Text(value=text, layout=W.Layout(width="100%", margin="0", padding="0", box_sizing="border-box", border="none"))
+        self._text = W.Text(value=text, layout=W.Layout(width="100%", margin="0", box_sizing="border-box"))
         super().__init__()        
         self.children = [self._image, self._text]
 
