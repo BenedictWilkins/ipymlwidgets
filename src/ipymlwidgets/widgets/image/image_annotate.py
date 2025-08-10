@@ -106,7 +106,7 @@ class ImageAnnotated(Image):
         self.observe(self._repaint_boxes, names="boxes")
         self.observe(self._repaint_selection, names="selection")
     
-
+    
     @observe("client_size", "size")
     def _on_resize(self, _: dict) -> None:
         """Update stroke width based on client size."""
@@ -244,6 +244,22 @@ class ImageAnnotated(Image):
             raise ValueError(f"Invalid box node: {self.selection.node}")
         return self.selection
 
+    
+
+    @observe("key_press")
+    def _on_key_press(self, event: dict) -> None:
+        """Handle key press event for box selection."""
+        event = event["new"]
+        if event["key"] == "Delete":
+            if self.selection is not None:
+                self.remove_box(self.selection.index)
+
+    @observe("mouse_leave")
+    def _on_mouse_leave(self, event: dict) -> None:
+        """Handle mouse exit event for box selection."""
+        if self._dragging:
+            self._drag_end(event)
+            
     @observe("mouse_down")
     def _on_mouse_down(self, event: dict) -> None:
         """Handle mouse down event for box selection."""
@@ -256,7 +272,6 @@ class ImageAnnotated(Image):
         """Handle mouse up event for box selection."""
         if self._dragging:
             self._drag_end(event)
-            self._dragging = False
 
     @observe("mouse_drag")
     def _on_mouse_drag(self, event: dict) -> None:
@@ -265,21 +280,24 @@ class ImageAnnotated(Image):
             self._drag_continue(event)
         else:
             self._drag_start(event)
-            self._dragging = True
 
     @hold_repaint
     def _drag_end(self, _: dict) -> None:
+        if not self._dragging:
+            return # TODO warning? this shouldn't happen...
         box = self.selection.get_box()  # get xyxy box
-       
         if self.selection.index >= 0:
             _new = self.boxes.copy()  # trigger change notification
             _new[self.selection.index, :] = box
             self.boxes = _new
         else:
             self.boxes = np.concatenate([self.boxes, box[None, :]], axis=0)
+        self._dragging = False
+
 
     @hold_repaint
     def _drag_start(self, event: dict) -> None:
+        self._dragging = True
         if self.selection is None:
             # start a new box!
             e = event["new"]
