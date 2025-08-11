@@ -334,8 +334,6 @@ class ImageAnnotated(Image):
         index = int(index) % len(self.boxes)
         s_index = self.selection.index % len(self.boxes) if self.selection is not None else None
         self.boxes = np.delete(self.boxes, index, axis=0)
-
-        display((index, s_index))
         if s_index == index:
             self.selection = None
             self._repaint_selection(None)

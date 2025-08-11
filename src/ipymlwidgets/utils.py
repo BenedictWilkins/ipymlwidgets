@@ -3,9 +3,19 @@ import torch
 import numpy as np
 import PIL as pillow
 from traitlets import TraitType
+import traceback
+from IPython.display import display
 
-
-
+def handle_exception(func):
+    """Decorator that catches and displays exceptions, Anywidget is known for swallowing exceptions..."""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            # TODO make an error widget?
+            display(f"<p>{traceback.format_exc()}</p>")
+            raise e
+    return wrapper
 
 class TensorTrait(TraitType):
     """A trait for torch tensors that supports custom validation."""

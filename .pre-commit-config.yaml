@@ -1,18 +1,5 @@
 repos:
-- repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.11.7
+- repo: https://github.com/kynan/nbstripout
+  rev: 0.8.1
   hooks:
-    - id: ruff
-      types_or: [ python, pyi ]
-      args: [ --fix ]
-    - id: ruff-format
-      types_or: [ python, pyi ]
-
-- repo: local
-  hooks:
-    - id: run-pytest
-      name: pytest
-      entry: pytest -ra -v
-      language: system
-      pass_filenames: false
-      always_run: true
+    - id: nbstripout
