@@ -1,4 +1,5 @@
 from ipymlwidgets import ImageAnnotated, Box, Button
+from ipymlwidgets.traits import Tensor as TTensor
 import numpy as np
 import ipywidgets as W
 from typing import Optional, Callable, Dict, Any
@@ -12,6 +13,7 @@ class ObjectAnnotator(Box):
         self, 
         data: Any,
         save_callback: Optional[Callable[[int, Dict[str, Any]], None]] = None,
+        load_callback: Optional[Callable[[int, Dict[str, Any]], Dict[str, Any]]] = None,
         auto_save: bool = True
     ):
         """Initialize the object detection annotator.
@@ -25,6 +27,7 @@ class ObjectAnnotator(Box):
         """
         self._data = data
         self.save_callback = save_callback
+        self.load_callback = load_callback
         self.auto_save = auto_save
         self.index = 0
 
@@ -70,13 +73,7 @@ class ObjectAnnotator(Box):
             "gap": "10px",
             "align-items": "center"
         })
-        
-        # Create status display
-        self.status_display = W.HTML()
-        
-        # Create main layout
         return [
-            self.status_display,
             self.image_annotator, 
             self.button_box
         ]
@@ -97,23 +94,20 @@ class ObjectAnnotator(Box):
         elif isinstance(example['image'], np.ndarray):
             image = example['image']
         else:
-            raise NotImplementedError(f"tensors are coming soon!")
+            pass 
 
         if image.ndim not in [2, 3]:
             raise ValueError(f"`image` at index {index} must be 2D or 3D array")
         
         if example.get('boxes', None) is None:
-            boxes = np.array([]).reshape(0, 4)
+            boxes = np.array([])
         else:
             boxes = np.array(example['boxes'])
 
-        if boxes.ndim == 1 and len(boxes) == 0:
-            boxes = boxes.reshape(0, 4)
-        elif boxes.ndim == 2 and boxes.shape[1] != 4:
-            raise ValueError(f"`boxes` at index {index} must have shape (N, 4)")
-        elif boxes.ndim != 2:
-            raise ValueError(f"`boxes` at index {index} must be 2D array")
-    
+        if boxes.ndim < 2:
+            boxes = boxes.reshape(-1, 4)
+        elif boxes.ndim != 2 or boxes.shape[1] != 4:
+            raise ValueError(f"`boxes` at index {index} must have shape [N, 4] but got {list(boxes.shape)}")
         
         return {
             'image': image,
@@ -140,24 +134,25 @@ class ObjectAnnotator(Box):
             try:
                 current_data = self.get_current_data()
                 self.save_callback(self.index, current_data)
-                self.status_display.value = f"<p style='color: green;'>Saved example {self.index}</p>"
+                #self.status_display.value = f"<p style='color: green;'>Saved example {self.index}</p>"
             except Exception as e:
-                self.status_display.value = f"<p style='color: red;'>Error saving: {str(e)}</p>"
-                raise
+                # self.status_display.value = f"<p style='color: red;'>Error saving: {str(e)}</p>"
+                raise e
     
     def _load_current_example(self):
         """Load the current example into the image annotator."""
         try:
             example = self._data[self.index]
+            if self.load_callback is not None:
+                example = self.load_callback(self.index, example)
             validated_example = self._validate_example(example, self.index)
             
             self.image_annotator.set_image(validated_example['image'])
             self.image_annotator.set_boxes(validated_example['boxes'])
         except Exception as e:
-            self.status_display.value = f"<p style='color: red;'>Error loading example: {str(e)}</p>"
+            # TODO? 
+            #self.status_display.value = f"<p style='color: red;'>Error loading example: {str(e)}</p>"
             raise e
-
-    
 
     def _on_prev_click(self, _):
         """Handle previous button click."""

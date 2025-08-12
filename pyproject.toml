@@ -7,10 +7,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "torch",
-    "torchvision",
     "numpy",
     "pillow",
+    "anywidget",
     "ipywidgets",
     "ipycanvas",
     "ipykernel",
@@ -112,15 +111,3 @@ docstring-code-line-length = "dynamic"
 
 [tool.uv]
 dev-dependencies = ["ruff>=0.11.7", "pre-commit", "pytest"]
-#no-build-isolation-package = ["torch_scatter"]
-
-# Recommended to use `[uv](https://docs.astral.sh/uv/)` to install this package.
-# `uv` will automatically install pytorch with CUDA. 
-[tool.uv.sources]
-torch = [{ index = "pytorch-cu118" }]
-torchvision = [{ index = "pytorch-cu118" }]
-
-[[tool.uv.index]]
-name = "pytorch-cu118"
-url = "https://download.pytorch.org/whl/cu118"
-explicit = true

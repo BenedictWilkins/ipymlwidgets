@@ -4,4 +4,6 @@ from .container import Box
 from .text import Text
 from .button import Button
 
-__all__ = ["Image", "ImageAnnotated", "Canvas", "Box", "List", "Text", "Button"]
+from ipywidgets import HTML 
+
+__all__ = ["Image", "ImageAnnotated", "Canvas", "Box", "List", "Text", "Button", "HTML"]
