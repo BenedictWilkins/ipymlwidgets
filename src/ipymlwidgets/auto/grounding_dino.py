@@ -3,10 +3,14 @@
 import numpy as np
 from typing import List, Union, Optional, Tuple
 from PIL import Image
+from ipymlwidgets.traits import SupportedTensor
+
 try:
     import torch
     from transformers import GroundingDinoProcessor, GroundingDinoForObjectDetection
 except ImportError:
+    torch = None
+    transformers = None
     pass # packages are optional... GroundingDINO class won't work without them!
 
 class GroundingDINO:
@@ -52,7 +56,7 @@ class GroundingDINO:
             return result
         return result + "."
     
-    def _prepare_image(self, image: Union[str, Image.Image, np.ndarray, torch.Tensor]) -> Image.Image:
+    def _prepare_image(self, image: Union[str, Image.Image, SupportedTensor]) -> Image.Image:
         """Convert various image formats to PIL Image.
         
         Args:
@@ -82,11 +86,11 @@ class GroundingDINO:
     
     def annotate(
         self, 
-        image: Union[str, Image.Image, np.ndarray, torch.Tensor],
+        image: Union[str, Image.Image, np.ndarray, SupportedTensor],
         prompts: Union[str, List[str]],
         return_labels: bool = False,
         return_scores: bool = False
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    ) -> Union[SupportedTensor, Tuple[SupportedTensor, ...]]:
         """Annotate image with bounding boxes for given prompts.
         
         Args:
