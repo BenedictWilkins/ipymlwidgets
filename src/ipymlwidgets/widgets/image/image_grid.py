@@ -88,6 +88,11 @@ class ImageGrid(Canvas):
         image = resize_image_letterbox(image, self.cell_size)
         return image
 
+    def clear_all(self):
+        self._images.clear()
+        self._images_cache.clear()
+        self._render_grid()
+
     def extend(self, images: Iterable[SupportedTensor]):
         """Extend the grid with a list of images."""
         for image in images:

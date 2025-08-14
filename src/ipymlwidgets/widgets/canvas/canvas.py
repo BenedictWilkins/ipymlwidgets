@@ -1,4 +1,6 @@
 from typing import Optional, Any
+import importlib.resources
+
 from contextlib import contextmanager
 import pathlib
 import functools
@@ -72,10 +74,9 @@ class Canvas(anywidget.AnyWidget):
         box-sizing: border-box;
         object-fit: contain;  /* Ensures that the image maintains its aspect ratio */
     }
-"""
+    """
 
-    # Javascript
-    _esm = pathlib.Path(__file__).parent / "canvas.js"
+    _esm = importlib.resources.files("ipymlwidgets.static") / "canvas.js"
 
     @property
     def stroke_width(self) -> int:

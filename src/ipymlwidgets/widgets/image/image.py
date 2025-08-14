@@ -68,24 +68,23 @@ class Image(Canvas):
 
     def set_image(self, image: Optional[SupportedTensor], layer: Optional[int] = None) -> None:
         """Set the image to be displayed."""
-        if image is not None:
-            image = self._to_numpy_image(image)  # HWC
-            size = (image.shape[1], image.shape[0]) # WH
-            if size != self.size:
-                self.size = size # update the canvas size before setting the image
-        super().set_image(image, layer=layer)
-
+        with self.hold_repaint(layer=layer):
+            self.image = image
 
     def _repaint_image(self, change: Optional[dict[str, Any]] = None) -> None:
         """Internal call back to repaint the image."""
         if change is None:
-            self.set_image(self._to_numpy_image(self.image))
+            image = self.image
         else:
             image = change["new"]
-            if image is None:
-                return self.set_image(None)
-            with self.hold_trait_notifications():
-                self.set_image(image)
+        if image is None:
+            super().set_image(None)
+        else:
+            image = self._to_numpy_image(image)  # HWC
+            size = (image.shape[1], image.shape[0]) # WH
+            if size != self.size:
+                self.size = size # update the canvas size before setting the image
+            super().set_image(image)
 
 
     def repaint(self) -> None:

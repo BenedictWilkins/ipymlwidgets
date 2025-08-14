@@ -281,6 +281,7 @@ class ImageAnnotated(Image):
         else:
             self._drag_start(event)
 
+    # TODO it is possible for a box of size zero to be added... dont allow this!
     @hold_repaint
     def _drag_end(self, _: dict) -> None:
         if not self._dragging:

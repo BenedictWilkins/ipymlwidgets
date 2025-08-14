@@ -35,7 +35,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-"datautils.fonts" = ["*.ttf"]
+"ipymlwidgets.static" = ["*.js", "*.css"]
 
 # ====== pytest config ====== # 
 
@@ -106,8 +106,3 @@ skip-magic-trailing-comma = false
 line-ending = "lf"
 docstring-code-format = false
 docstring-code-line-length = "dynamic"
-
-# ====== uv config ====== # 
-
-[tool.uv]
-dev-dependencies = ["ruff>=0.11.7", "pre-commit", "pytest"]

@@ -4,8 +4,10 @@ import torch
 import numpy as np
 from typing import List, Union, Optional, Tuple
 from PIL import Image
-from transformers import GroundingDinoProcessor, GroundingDinoForObjectDetection
-
+try: 
+    from transformers import GroundingDinoProcessor, GroundingDinoForObjectDetection
+except ImportError:
+    pass # package is optional...
 
 class GroundingDINO:
     """A simple wrapper for Grounding DINO object detection.
@@ -18,20 +20,17 @@ class GroundingDINO:
         self, 
         model_name: str = "IDEA-Research/grounding-dino-base",
         device: Optional[str] = None,
-        box_threshold: float = 0.0,
-        text_threshold: float = 0.0
+        threshold: float = 0.0,
     ):
         """Initialize the Grounding DINO model.
         
         Args:
             model_name (str): Model name from Hugging Face. Defaults to "IDEA-Research/grounding-dino-base".
             device (Optional[str]): Device to run the model on. Defaults to auto-detect.
-            box_threshold (float): Threshold for box confidence. Defaults to 0.3.
-            text_threshold (float): Threshold for text confidence. Defaults to 0.25.
+            threshold (float): Threshold for box confidence. Defaults to 0.3.
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.box_threshold = box_threshold
-        self.text_threshold = text_threshold
+        self.threshold = threshold
         
         # Load processor and model
         self.processor = GroundingDinoProcessor.from_pretrained(model_name)
@@ -126,7 +125,7 @@ class GroundingDINO:
         postprocessed_outputs = self.processor.image_processor.post_process_object_detection(
             outputs,
             target_sizes=[(height, width)],
-            threshold=self.box_threshold
+            threshold=self.threshold
         )
         
         results = postprocessed_outputs[0]
@@ -153,12 +152,3 @@ class GroundingDINO:
         
         return tuple(return_values)
     
-    def set_thresholds(self, box_threshold: float, text_threshold: float) -> None:
-        """Update detection thresholds.
-        
-        Args:
-            box_threshold (float): New box confidence threshold.
-            text_threshold (float): New text confidence threshold.
-        """
-        self.box_threshold = box_threshold
-        self.text_threshold = text_threshold
