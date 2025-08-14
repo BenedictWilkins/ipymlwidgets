@@ -1,13 +1,13 @@
 """Grounding DINO wrapper for easy object detection."""
 
-import torch
 import numpy as np
 from typing import List, Union, Optional, Tuple
 from PIL import Image
-try: 
+try:
+    import torch
     from transformers import GroundingDinoProcessor, GroundingDinoForObjectDetection
 except ImportError:
-    pass # package is optional...
+    pass # packages are optional... GroundingDINO class won't work without them!
 
 class GroundingDINO:
     """A simple wrapper for Grounding DINO object detection.
