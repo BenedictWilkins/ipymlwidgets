@@ -52,11 +52,12 @@ class Canvas(anywidget.AnyWidget):
         min-width: 0;
         min-height: 64px;        /* important in flex/grid stacks */
         overflow: hidden;
+        
     }
     
     .multicanvas-wrapper {
         position: absolute;
-        inset: 0;           /* gives hard width+height constraints */
+        inset: 4px;           /* gives hard width+height constraints */
         margin: auto;       /* center when letterboxed */
         aspect-ratio: 1 / 1; 
         max-width: 100%;
