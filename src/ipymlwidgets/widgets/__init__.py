@@ -1,4 +1,4 @@
-from .image import Image, ImageAnnotated
+from .image import Image, ImageAnnotated, ImageGrid
 from .canvas import Canvas
 from .container import Box
 from .text import Text

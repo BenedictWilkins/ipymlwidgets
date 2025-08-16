@@ -122,7 +122,6 @@ class ImageGrid(Canvas):
             self._images_cache.pop(i)
         self._render_grid()
 
-
     @observe("mouse_down")
     def _on_mouse_down(self, event: dict):
         if len(self._images) == 0:
@@ -136,7 +135,6 @@ class ImageGrid(Canvas):
         else:
             self.selection = self.selection | {index}
             self._clear_selection = False
-
         self._render_selected_at_index(index)
     
     @observe("mouse_drag")
@@ -155,7 +153,6 @@ class ImageGrid(Canvas):
                 self.selection = self.selection | {index}
                 self._render_selected_at_index(index)
         
-    
     def _render_selected_at_index(self, index: int):
         row = index // self.columns
         col = index % self.columns
@@ -207,29 +204,3 @@ class ImageGrid(Canvas):
         # Draw the image on the canvas
         self.set_patch(x, y, self.cell_size[0], self.cell_size[1], image, layer=0)
         # TODO clear the patch?
-    
-    
-    # @traitlets.observe('images')
-    # def _on_images_changed(self, change):
-    #     """Handle changes to the images list."""
-    #     self._render_grid()
-    
-    # @traitlets.observe('mouse_click')
-    # def _on_mouse_click(self, change):
-    #     """Handle mouse clicks to select images."""
-    #     if not change['new']:
-    #         return
-        
-    #     x = change['new'].get('offsetX', 0)
-    #     y = change['new'].get('offsetY', 0)
-        
-    #     # Calculate which cell was clicked
-    #     col = x // self.cell_size[0]
-    #     row = y // self.cell_size[1]
-    #     index = row * self.columns + col
-        
-    #     # Select the clicked image if it exists
-    #     if 0 <= index < len(self.images):
-    #         self.select_image(index)
-    #     else:
-    #         self.select_image(-1)  # Deselect if clicked outside 

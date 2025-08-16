@@ -6,10 +6,10 @@ class Layout(TraitType):
     
     # Define which properties we want to support
     SUPPORTED_PROPERTIES = {
-        'display', 'position', 'overflow', 'float', 'clear', 'z-index',
+        'aspect-ratio', 'display', 'position', 'overflow', 'float', 'clear', 'z-index',
         'width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
         'padding', 'margin', 'gap', 'top', 'right', 'bottom', 'left',
-        'flex-direction', 'flex-wrap', 'justify-content', 'align-items', 'align-self',
+        'flex-direction', 'flex-flow', 'flex-wrap', 'justify-content', 'align-items', 'align-self',
         'flex-grow', 'flex-shrink', 'flex-basis', 'flex', 'order',
         'grid-template-columns', 'grid-template-rows', 'grid-area', 
         'grid-column', 'grid-row', 'grid-gap',
@@ -43,8 +43,10 @@ class Layout(TraitType):
             if not isinstance(val, (str, int, float)):
                 self.error(obj, value, info=f"Property values must be strings or numbers, got {type(val).__name__} for '{prop}'")
             
+            prop = prop.replace('_', '-')
             # Convert to string for validation
             val_str = str(val)
+
             
             # Check if property is supported
             if prop not in self.SUPPORTED_PROPERTIES:
@@ -87,6 +89,7 @@ if __name__ == "__main__":
         "flex-direction": "row", 
         "margin": "10px", 
         "gap": "20px"
+
     }
     result = layout.validate(None, test_values)
     print("Layout validation working!", result)

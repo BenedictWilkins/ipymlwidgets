@@ -46,20 +46,19 @@ class Canvas(anywidget.AnyWidget):
 
     _css = """
     .multicanvas-widget {
-        position: relative;   /* needed for the child absolute positioning */
+        display: flex;
         width: 100%;
         height: 100%;
         min-width: 0;
-        min-height: 64px;        /* important in flex/grid stacks */
+        min-height: 0;
         overflow: hidden;
-        
+        object-fit: contain;
     }
     
     .multicanvas-wrapper {
-        position: absolute;
-        inset: 4px;           /* gives hard width+height constraints */
-        margin: auto;       /* center when letterboxed */
         aspect-ratio: 1 / 1; 
+        width: 100%;            
+        height: auto;               
         max-width: 100%;
         max-height: 100%;
         display: grid;
@@ -76,10 +75,6 @@ class Canvas(anywidget.AnyWidget):
         min-width: 0;
         min-height: 0;
         box-sizing: border-box;
-        position: absolute;
-        inset: 0;
-
-        //object-fit: contain;  /* Ensures that the image maintains its aspect ratio */
     }
 
     .multicanvas-wrapper:focus-visible {

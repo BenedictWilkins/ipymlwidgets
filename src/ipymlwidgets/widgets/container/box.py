@@ -44,7 +44,6 @@ class Box(anywidget.AnyWidget):
 
         async function set_layout(model, el) {
             const layout = model.get("layout");
-            console.log("new layout", layout)
             Object.keys(layout).forEach((key) => {
                 const cssProperty = key.replace(/([A-Z])/g, '-$1').toLowerCase();  // Convert camelCase to kebab-case
                 el.style[cssProperty] = layout[key];  // Apply the CSS property to the element

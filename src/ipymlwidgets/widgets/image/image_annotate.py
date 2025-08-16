@@ -129,18 +129,18 @@ class ImageAnnotated(Image):
             index = index % (len(self._boxes) + 1)
         else:
             index = index + 1
-        self._boxes = np.insert(self._boxes, index, box, axis=0)
         self._box_mask = np.insert(self._box_mask, index, np.ones(box.shape[0], dtype=bool), axis=0)
+        self._boxes = np.insert(self._boxes, index, box, axis=0)
         #print(f"[DEBUG] insert box: {box} {index} {self._boxes} {self._box_mask}")
 
     @hold_repaint
     def set_boxes(self, boxes : np.ndarray) -> None:
         """Set box annotations - replaces existing annotations."""
-        self._boxes = boxes
-        self._box_mask = np.ones_like(self._boxes[:,0], dtype=bool)
         self._selection = None
-        self._repaint_boxes(None)
         self._repaint_selection(None)
+        self._box_mask = np.ones_like(boxes[:,0], dtype=bool)
+        self._boxes = boxes
+        self._repaint_boxes(None)
 
     @debug_exception
     def _set_box(self,  box: np.ndarray, index : int) -> None:
