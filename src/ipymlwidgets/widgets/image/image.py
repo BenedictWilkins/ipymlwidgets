@@ -1,6 +1,5 @@
 import numpy as np
 from typing import Optional, Any
-from traitlets import Tuple as TTuple
 
 from ipymlwidgets.widgets.canvas import Canvas
 from ipymlwidgets.traits.tensor import (

@@ -45,21 +45,24 @@ class Canvas(anywidget.AnyWidget):
     key_release = traitlets.Dict().tag(sync=True)
 
     _css = """
-    :host {
-        display: block;
+    .multicanvas-widget {
+        position: relative;   /* needed for the child absolute positioning */
         width: 100%;
-        height: auto;
-        box-sizing: border-box;
-        position: relative;
+        height: 100%;
+        min-width: 0;
+        min-height: 64px;        /* important in flex/grid stacks */
+        overflow: hidden;
     }
-
-        
+    
     .multicanvas-wrapper {
-        display: grid;
-        width: 100%;
-        height: 100%; 
+        position: absolute;
+        inset: 0;           /* gives hard width+height constraints */
+        margin: auto;       /* center when letterboxed */
+        aspect-ratio: 1 / 1; 
         max-width: 100%;
         max-height: 100%;
+        display: grid;
+        overflow: hidden;
         box-sizing: border-box;
     }
 
@@ -72,7 +75,16 @@ class Canvas(anywidget.AnyWidget):
         min-width: 0;
         min-height: 0;
         box-sizing: border-box;
-        object-fit: contain;  /* Ensures that the image maintains its aspect ratio */
+        position: absolute;
+        inset: 0;
+
+        //object-fit: contain;  /* Ensures that the image maintains its aspect ratio */
+    }
+
+    .multicanvas-wrapper:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px #4da3ff;                       /* outside ring */
+        /* optional glow: box-shadow: 0 0 0 2px #4da3ff, 0 0 0 4px rgba(77,163,255,.35); */
     }
     """
 

@@ -1,9 +1,3 @@
-// --- Size & Layout Helpers ---
-function updateStyles(model, wrapper) {
-    wrapper.style.width = model.get("css_width");
-    wrapper.style.height = model.get("css_height");
-}
-
 function updateClientSize(model, wrapper) {
     const rect = wrapper.getBoundingClientRect();
     const clientWidth = Math.round(rect.width);
@@ -17,7 +11,6 @@ function updateClientSize(model, wrapper) {
 
 function updateCanvas(model, canvases, offCanvas) {
     const size = model.get("size");
-    console.log("[update canvas]", size);
     const width = size[0];
     const height = size[1];
     for (let i = 0; i < canvases.length; i++) {
@@ -27,8 +20,12 @@ function updateCanvas(model, canvases, offCanvas) {
     }
     offCanvas.width = width;
     offCanvas.height = height;
+
+    const wrapper = canvases[0].parentElement;
+    if (wrapper) wrapper.style.aspectRatio = `${width} / ${height}`;
 }
 
+// --- Keyboard Event Handling --- //
 function setupKeyboardEvents(model, wrapper) {
     function handleKeyDown(event) {
         const keyData = {
@@ -85,7 +82,7 @@ function setupKeyboardEvents(model, wrapper) {
     };
 }
 
-// --- Mouse Event Handling ---
+// --- Mouse Event Handling --- //
 function setupMouseEvents(model, wrapper, canvases) {
     let isMouseDown = false;
     let dragStartPos = null;
@@ -224,6 +221,7 @@ function setupMouseEvents(model, wrapper, canvases) {
     };
 }
 
+// --- Draw functionality --- //
 function drawRect(command, ctx, offCtx) {
     if (!command.data) return;
     const { data, count, pixel_perfect } = command;
@@ -463,7 +461,9 @@ function draw(buffer, contexts, offCtx) {
 function render({ model, el }) {
     // Create inner wrapper for canvas positioning
     const wrapper = document.createElement("div");
+    //const wrapper = el;
     wrapper.classList.add("multicanvas-wrapper");
+    el.classList.add("multicanvas-widget");
 
     // Array to hold all canvas elements and contexts
     const canvases = [];
@@ -480,20 +480,18 @@ function render({ model, el }) {
     }
     el.appendChild(wrapper);
 
-
-    // offscreen canvas for blit drawing tricks
+    // Set up off screen canvas for blit drawing tricks
     const offCanvas = document.createElement('canvas');
     const offCtx = offCanvas.getContext('2d');
 
-    // Initial render - just set up the canvas dimensions
-    updateStyles(model, wrapper);
+    // Set up initial canvas dimensions
     updateCanvas(model, canvases, offCanvas);
 
-    // Setup mouse events
+    // Set up io events
     const cleanupMouse = setupMouseEvents(model, wrapper, canvases);
     const cleanupKeyboard = setupKeyboardEvents(model, wrapper);
 
-    // ResizeObserver to track actual rendered size
+    // Track actual rendered size
     let resizeObserver;
     if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(entries => {
@@ -504,14 +502,18 @@ function render({ model, el }) {
             }
         });
         resizeObserver.observe(wrapper);
+    } else {
+        // Fallback? Use window resize event
+        console.log("[ERROR] ResizeObserver is not supported");
     }
 
-    // Listen for changes
+    // Listen for server side changes to canvas size
     model.on("change:size", () => {
         updateCanvas(model, canvases, offCanvas);
     });
 
-    const buffer = []; // queue for incoming draw commands
+    // queue for incoming draw commands
+    const buffer = [];
     let scheduled = false;
 
     function scheduleDraw() {
@@ -539,12 +541,8 @@ function render({ model, el }) {
     model.on("change:_buffer_syn", () => {
         scheduleDraw();
     });
-    // model.on("change:css_width change:css_height", () => {
-    //     updateStyles(model, wrapper);
-    // });
-
-    scheduleDraw(); // schedule an initial draw 
-    //console.log("[draw] initial draw complete!");
+    // schedule an initial draw 
+    scheduleDraw(); 
 
     // Return cleanup
     return () => {
